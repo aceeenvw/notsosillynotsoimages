@@ -1,0 +1,12 @@
+{
+    "display_name": "Inline Image Generation",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "local",
+    "version": "beta 1.1",
+    "homePage": "https://github.com/0xl0cal/sillyimages/",
+    "auto_update": true
+}
