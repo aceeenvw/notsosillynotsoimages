@@ -97,8 +97,6 @@ endpoint: `/v1beta/models/{model}:generateContent`
 - **Aspect Ratio** — `1:1`, `3:2`, `2:3`
 - **Preset** — None, Digital, Realism
 
-paste your token from the Telegram bot. the extension auto-appends `/api/generate` if your URL doesn't include it.
-
 endpoint: `/api/generate`
 </details>
 
