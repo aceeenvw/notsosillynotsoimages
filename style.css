@@ -1,0 +1,672 @@
+/* ============================================================
+   Inline Image Generation Extension — Styles
+   SillyTavern Extension: notsosillynotsoimages
+   by aceeenvw — https://github.com/aceeenvw/notsosillynotsoimages
+   ============================================================ */
+
+/* ==================== Settings Panel ==================== */
+
+.iig-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* SillyTavern can apply pre-wrap in some panels; avoid showing template indentation. */
+    white-space: normal !important;
+}
+
+.iig-settings * {
+    white-space: normal !important;
+}
+
+.iig-settings .flex-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 180px) 1fr auto;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 6px;
+}
+
+.iig-settings .flex-row > label {
+    min-width: 0;
+}
+
+.iig-settings .flex1 {
+    flex: 1;
+    min-width: 0;
+}
+
+.iig-settings hr {
+    margin: 10px 0;
+    border: none;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+.iig-settings h4 {
+    margin: 8px 0 4px;
+    color: var(--SmartThemeBodyColor);
+    font-size: 1em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.iig-settings h4 i {
+    font-size: 0.9em;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.iig-settings h4:hover i {
+    opacity: 1;
+}
+
+.iig-settings .hint {
+    font-size: 0.85em;
+    color: var(--SmartThemeQuoteColor);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.iig-hidden {
+    display: none !important;
+}
+
+/* ==================== Section Cards ==================== */
+
+.iig-section {
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 10px;
+    padding: 14px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.iig-section:hover {
+    border-color: color-mix(in srgb, var(--SmartThemeBorderColor) 60%, var(--SmartThemeBodyColor) 40%);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.iig-section h4 {
+    margin-top: 0;
+}
+
+/* ==================== Status Badge ==================== */
+
+.iig-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.8em;
+    font-weight: 500;
+    margin-left: auto;
+    transition: background 0.2s ease;
+}
+
+.iig-status-badge.active {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+}
+
+.iig-status-badge.inactive {
+    background: rgba(158, 158, 158, 0.15);
+    color: #9e9e9e;
+}
+
+.iig-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.iig-status-badge.active .iig-status-dot {
+    animation: iig-dot-pulse 2s ease-in-out infinite;
+}
+
+@keyframes iig-dot-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* ==================== Loading Placeholder ==================== */
+
+.iig-loading-placeholder {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    min-width: 160px;
+    max-width: 100%;
+    width: auto;
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 5px;
+    border: 2px dashed var(--SmartThemeBorderColor);
+    box-sizing: border-box;
+    transition: border-color 0.3s ease, background 0.3s ease;
+    animation: iig-placeholder-fade-in 0.3s ease-out;
+}
+
+.iig-loading-placeholder:hover {
+    border-color: var(--SmartThemeBodyColor);
+}
+
+@keyframes iig-placeholder-fade-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Pulse ring around spinner */
+.iig-spinner-wrap {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.iig-loading-placeholder .iig-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--SmartThemeBorderColor);
+    border-top-color: var(--SmartThemeBodyColor);
+    border-radius: 50%;
+    animation: iig-spin 0.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+.iig-spinner-wrap::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--SmartThemeBodyColor);
+    opacity: 0;
+    animation: iig-pulse-ring 2s ease-out infinite;
+}
+
+.iig-loading-placeholder .iig-status {
+    margin-top: 12px;
+    font-size: 0.85em;
+    color: var(--SmartThemeQuoteColor);
+    text-align: center;
+    transition: color 0.2s ease;
+}
+
+.iig-loading-placeholder .iig-timer {
+    font-size: 0.75em;
+    color: var(--SmartThemeQuoteColor);
+    opacity: 0.6;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes iig-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes iig-pulse-ring {
+    0% { transform: scale(1); opacity: 0.4; }
+    100% { transform: scale(1.3); opacity: 0; }
+}
+
+/* ==================== Error Image ==================== */
+
+.iig-error-image {
+    display: block;
+    max-width: 300px;
+    min-width: 180px;
+    min-height: 135px;
+    width: 100%;
+    height: auto;
+    border-radius: 12px;
+    margin: 5px 0;
+    border: 2px solid rgba(232, 93, 117, 0.35);
+    transition: border-color 0.25s ease, filter 0.25s ease, transform 0.25s ease;
+    animation: iig-error-appear 0.4s ease-out;
+}
+
+.iig-error-image:hover {
+    border-color: rgba(232, 93, 117, 0.65);
+    filter: brightness(1.08);
+    transform: scale(1.01);
+}
+
+@keyframes iig-error-appear {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* ==================== Generated Image ==================== */
+
+.iig-generated-image {
+    max-width: 100%;
+    border-radius: 12px;
+    margin: 10px 0;
+    cursor: zoom-in;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    animation: iig-image-reveal 0.5s ease-out;
+}
+
+.iig-generated-image:hover {
+    transform: scale(1.008);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes iig-image-reveal {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==================== Buttons ==================== */
+
+.iig-refresh-btn {
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.iig-refresh-btn:hover {
+    transform: rotate(30deg);
+}
+
+.iig-refresh-btn:active {
+    transform: rotate(90deg);
+}
+
+.iig-refresh-btn.loading i {
+    animation: iig-spin 0.8s linear infinite;
+}
+
+.iig-key-toggle {
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.iig-key-toggle:hover {
+    opacity: 0.7;
+}
+
+/* ==================== Regenerate button in message menu ==================== */
+/* Inherits .mes_button styling from SillyTavern */
+
+.iig-regenerate-btn {
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.iig-regenerate-btn:hover {
+    transform: scale(1.1);
+}
+
+/* ==================== Unified References Section ==================== */
+
+.iig-refs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    transition: border-color 0.25s ease;
+}
+
+.iig-refs:hover {
+    border-color: color-mix(in srgb, var(--SmartThemeBorderColor) 60%, var(--SmartThemeBodyColor) 40%);
+}
+
+.iig-refs h4 {
+    margin: 0;
+}
+
+.iig-refs .hint {
+    margin-bottom: 6px;
+}
+
+.iig-refs-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.iig-ref-slot {
+    display: grid;
+    grid-template-columns: 56px 48px 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    transition: background 0.15s ease;
+}
+
+.iig-ref-slot:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.iig-ref-slot:last-child {
+    border-bottom: none;
+}
+
+.iig-ref-label {
+    font-size: 0.8em;
+    font-weight: 600;
+    color: var(--SmartThemeQuoteColor);
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.iig-ref-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.iig-ref-thumb {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: var(--SmartThemeBorderColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.iig-ref-thumb:hover {
+    transform: scale(1.12);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    border-color: var(--SmartThemeBodyColor);
+}
+
+.iig-ref-thumb[src=""],
+.iig-ref-thumb:not([src]) {
+    background: var(--SmartThemeBorderColor);
+}
+
+.iig-ref-name {
+    min-width: 0;
+}
+
+.iig-ref-upload-btn,
+.iig-ref-delete-btn {
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.iig-ref-upload-btn:hover {
+    transform: translateY(-1px);
+}
+
+.iig-ref-delete-btn:hover {
+    opacity: 0.7;
+    transform: scale(0.95);
+}
+
+/* Separator between char/user and NPC slots */
+.iig-refs hr {
+    margin: 6px 0;
+    border: none;
+    border-top: 1px dashed var(--SmartThemeBorderColor);
+}
+
+/* ==================== Test Connection Button ==================== */
+
+.iig-test-connection {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+    border-radius: 6px;
+}
+
+.iig-test-connection:hover {
+    transform: translateY(-1px);
+}
+
+.iig-test-connection:active {
+    transform: translateY(0);
+}
+
+.iig-test-connection.testing {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.iig-test-connection.testing i {
+    animation: iig-spin 0.8s linear infinite;
+}
+
+/* Success/failure flash on test connection */
+.iig-test-connection.test-success {
+    animation: iig-flash-success 0.6s ease-out;
+}
+
+.iig-test-connection.test-fail {
+    animation: iig-flash-fail 0.6s ease-out;
+}
+
+@keyframes iig-flash-success {
+    0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(76, 175, 80, 0.15); }
+    100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+}
+
+@keyframes iig-flash-fail {
+    0% { box-shadow: 0 0 0 0 rgba(232, 93, 117, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(232, 93, 117, 0.15); }
+    100% { box-shadow: 0 0 0 0 rgba(232, 93, 117, 0); }
+}
+
+/* ==================== Collapsible Sub-sections ==================== */
+
+.iig-collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 4px 0;
+    user-select: none;
+    transition: opacity 0.15s ease;
+}
+
+.iig-collapsible-header:hover {
+    opacity: 0.8;
+}
+
+.iig-collapsible-icon {
+    font-size: 0.75em;
+    transition: transform 0.25s ease;
+    opacity: 0.6;
+}
+
+.iig-collapsible-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.iig-collapsible-content.collapsed {
+    display: none;
+}
+
+/* ==================== Export Logs Button ==================== */
+
+.iig-export-logs-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px;
+    transition: opacity 0.2s ease;
+}
+
+.iig-export-logs-btn:hover {
+    opacity: 0.85;
+}
+
+/* ==================== Toast-style generation count ==================== */
+
+.iig-gen-counter {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.8em;
+    color: var(--SmartThemeQuoteColor);
+    z-index: 1000;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.iig-gen-counter.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* ==================== Responsive adjustments ==================== */
+
+@media (max-width: 600px) {
+    .iig-ref-slot {
+        grid-template-columns: 40px 40px 1fr auto auto;
+        gap: 4px;
+    }
+
+    .iig-ref-thumb {
+        width: 40px;
+        height: 40px;
+    }
+
+    .iig-ref-label {
+        font-size: 0.7em;
+    }
+
+    .iig-section {
+        padding: 10px;
+    }
+
+    .iig-refs {
+        padding: 10px;
+    }
+}
+
+/* ==================== Lightbox ==================== */
+
+.iig-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.iig-lightbox.open {
+    pointer-events: auto;
+    opacity: 1;
+}
+
+.iig-lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.iig-lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    transform: scale(0.92);
+    transition: transform 0.3s ease;
+}
+
+.iig-lightbox.open .iig-lightbox-content {
+    transform: scale(1);
+}
+
+.iig-lightbox-img {
+    max-width: 90vw;
+    max-height: 82vh;
+    border-radius: 10px;
+    object-fit: contain;
+    box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
+}
+
+.iig-lightbox-caption {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.82em;
+    max-width: 600px;
+    text-align: center;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+.iig-lightbox-close {
+    position: absolute;
+    top: -40px;
+    right: -8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.iig-lightbox-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
+}
+
+/* ==================== Header Status Dot ==================== */
+
+.iig-header-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #666;
+    margin-left: auto;
+    margin-right: 8px;
+    flex-shrink: 0;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.iig-header-dot.active {
+    background: #4caf50;
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+    animation: iig-dot-pulse 2s ease-in-out infinite;
+}
