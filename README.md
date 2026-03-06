@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="error.svg" width="260" alt="notsosillynotsoimages">
-</p>
-
 <h1 align="center">notsosillynotsoimages</h1>
 
 <p align="center">
@@ -10,7 +6,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/aceeenvw/notsosillynotsoimages"><img src="https://img.shields.io/badge/version-2.0.0-2d5a3a?style=flat-square" alt="Version"></a>
   <a href="https://github.com/aceeenvw/notsosillynotsoimages/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2d5a3a?style=flat-square" alt="License"></a>
   <a href="https://github.com/SillyTavern/SillyTavern"><img src="https://img.shields.io/badge/SillyTavern-extension-3a7a4a?style=flat-square" alt="SillyTavern"></a>
 </p>
