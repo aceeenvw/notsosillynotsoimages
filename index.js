@@ -1421,22 +1421,29 @@ async function processMessageTags(messageId) {
     try {
         await Promise.all(tags.map((tag, index) => processTag(tag, index)));
     } finally {
-        processingMessages.delete(messageId);
-        iigLog('INFO', `Finished processing message ${messageId}`);
-    }
-    
-    await context.saveChat();
-    
-    if (typeof context.messageFormatting === 'function') {
-        const formattedMessage = context.messageFormatting(
-            message.mes,
-            message.name,
-            message.is_system,
-            message.is_user,
-            messageId
-        );
-        mesTextEl.innerHTML = formattedMessage;
-        iigLog('INFO', 'Message re-rendered via messageFormatting');
+        try {
+            iigLog('INFO', `Finished processing message ${messageId}`);
+            await context.saveChat();
+            
+            if (typeof context.messageFormatting === 'function' && !processMessageTags._formatting) {
+                processMessageTags._formatting = true;
+                try {
+                    const formattedMessage = context.messageFormatting(
+                        message.mes,
+                        message.name,
+                        message.is_system,
+                        message.is_user,
+                        messageId
+                    );
+                    mesTextEl.innerHTML = formattedMessage;
+                    iigLog('INFO', 'Message re-rendered via messageFormatting');
+                } finally {
+                    processMessageTags._formatting = false;
+                }
+            }
+        } finally {
+            processingMessages.delete(messageId);
+        }
     }
 }
 
