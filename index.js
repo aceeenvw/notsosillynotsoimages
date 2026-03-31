@@ -1709,23 +1709,27 @@ async function onMessageReceived(messageId) {
 function renderRefSlots() {
     const settings = getCurrentCharacterRefs();
 
-    const setThumb = (thumb, ref) => {
+    const setThumb = (slot, ref) => {
+        const thumb = slot?.querySelector('.iig-ref-thumb');
+        const wrap = slot?.querySelector('.iig-ref-thumb-wrap');
         if (!thumb) return;
         if (ref?.imagePath) { thumb.src = ref.imagePath; }
         else if (ref?.imageBase64) { thumb.src = 'data:image/jpeg;base64,' + ref.imageBase64; }
         else if (ref?.imageData) { thumb.src = 'data:image/jpeg;base64,' + ref.imageData; }
         else { thumb.src = ''; }
+        // Toggle has-image class for visual state
+        if (wrap) wrap.classList.toggle('has-image', !!(ref?.imagePath || ref?.imageBase64 || ref?.imageData));
     };
 
     const charSlot = document.querySelector('.iig-ref-slot[data-ref-type="char"]');
     if (charSlot) {
-        setThumb(charSlot.querySelector('.iig-ref-thumb'), settings.charRef);
+        setThumb(charSlot, settings.charRef);
         charSlot.querySelector('.iig-ref-name').value = settings.charRef?.name || '';
     }
 
     const userSlot = document.querySelector('.iig-ref-slot[data-ref-type="user"]');
     if (userSlot) {
-        setThumb(userSlot.querySelector('.iig-ref-thumb'), settings.userRef);
+        setThumb(userSlot, settings.userRef);
         userSlot.querySelector('.iig-ref-name').value = settings.userRef?.name || '';
     }
 
@@ -1733,7 +1737,7 @@ function renderRefSlots() {
         const slot = document.querySelector(`.iig-ref-slot[data-ref-type="npc"][data-npc-index="${i}"]`);
         if (!slot) continue;
         const npc = settings.npcReferences[i] || null;
-        setThumb(slot.querySelector('.iig-ref-thumb'), npc);
+        setThumb(slot, npc);
         slot.querySelector('.iig-ref-name').value = npc?.name || '';
     }
 }
@@ -1757,14 +1761,25 @@ function createSettingsUI() {
     for (let i = 0; i < 4; i++) {
         npcSlotsHtml += `
             <div class="iig-ref-slot" data-ref-type="npc" data-npc-index="${i}">
-                <div class="iig-ref-label">NPC ${i + 1}</div>
-                <div class="iig-ref-preview"><img src="" alt="NPC" class="iig-ref-thumb"></div>
-                <input type="text" class="text_pole iig-ref-name" placeholder="NPC name" value="">
-                <label class="menu_button iig-ref-upload-btn" title="Upload photo">
-                    <i class="fa-solid fa-upload"></i>
-                    <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
-                </label>
-                <div class="menu_button iig-ref-delete-btn" title="Remove"><i class="fa-solid fa-trash"></i></div>
+                <div class="iig-ref-thumb-wrap">
+                    <img src="" alt="NPC" class="iig-ref-thumb">
+                    <div class="iig-ref-empty-icon"><i class="fa-solid fa-user-plus"></i></div>
+                    <label class="iig-ref-upload-overlay" title="Upload photo">
+                        <i class="fa-solid fa-camera"></i>
+                        <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
+                    </label>
+                </div>
+                <div class="iig-ref-info">
+                    <div class="iig-ref-label">NPC ${i + 1}</div>
+                    <input type="text" class="text_pole iig-ref-name" placeholder="Name" value="">
+                </div>
+                <div class="iig-ref-actions">
+                    <label class="menu_button iig-ref-upload-btn" title="Upload photo">
+                        <i class="fa-solid fa-upload"></i>
+                        <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
+                    </label>
+                    <div class="menu_button iig-ref-delete-btn" title="Remove"><i class="fa-solid fa-trash-can"></i></div>
+                </div>
             </div>`;
     }
 
@@ -1905,36 +1920,65 @@ function createSettingsUI() {
                     <!-- References Section (visible for gemini and naistera) -->
                     <div id="iig_refs_section" class="iig-refs ${settings.apiType === 'openai' ? 'iig-hidden' : ''}">
                         <h4><i class="fa-solid fa-user-group"></i> Character References</h4>
-                        <p class="hint">Upload reference photos for consistent generation. Max 4 images sent per request. Char and User are always sent; NPCs only when their name appears in the prompt.</p>
+                        <p class="hint">Upload reference photos for consistent generation. Max 4 per request. Char & User always sent; NPCs only when named in prompt.</p>
                         
-                        <!-- Char slot -->
-                        <div class="iig-ref-slot" data-ref-type="char">
-                            <div class="iig-ref-label">{{char}}</div>
-                            <div class="iig-ref-preview"><img src="" alt="Char" class="iig-ref-thumb"></div>
-                            <input type="text" class="text_pole iig-ref-name" placeholder="Character name" value="">
-                            <label class="menu_button iig-ref-upload-btn" title="Upload photo">
-                                <i class="fa-solid fa-upload"></i>
-                                <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
-                            </label>
-                            <div class="menu_button iig-ref-delete-btn" title="Remove"><i class="fa-solid fa-trash"></i></div>
+                        <div class="iig-refs-grid">
+                            <!-- Main characters -->
+                            <div class="iig-refs-row iig-refs-main">
+                                <!-- Char slot -->
+                                <div class="iig-ref-slot" data-ref-type="char">
+                                    <div class="iig-ref-thumb-wrap">
+                                        <img src="" alt="Char" class="iig-ref-thumb">
+                                        <div class="iig-ref-empty-icon"><i class="fa-solid fa-user"></i></div>
+                                        <label class="iig-ref-upload-overlay" title="Upload photo">
+                                            <i class="fa-solid fa-camera"></i>
+                                            <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
+                                        </label>
+                                    </div>
+                                    <div class="iig-ref-info">
+                                        <div class="iig-ref-label">{{char}}</div>
+                                        <input type="text" class="text_pole iig-ref-name" placeholder="Name" value="">
+                                    </div>
+                                    <div class="iig-ref-actions">
+                                        <label class="menu_button iig-ref-upload-btn" title="Upload photo">
+                                            <i class="fa-solid fa-upload"></i>
+                                            <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
+                                        </label>
+                                        <div class="menu_button iig-ref-delete-btn" title="Remove"><i class="fa-solid fa-trash-can"></i></div>
+                                    </div>
+                                </div>
+                                
+                                <!-- User slot -->
+                                <div class="iig-ref-slot" data-ref-type="user">
+                                    <div class="iig-ref-thumb-wrap">
+                                        <img src="" alt="User" class="iig-ref-thumb">
+                                        <div class="iig-ref-empty-icon"><i class="fa-solid fa-user"></i></div>
+                                        <label class="iig-ref-upload-overlay" title="Upload photo">
+                                            <i class="fa-solid fa-camera"></i>
+                                            <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
+                                        </label>
+                                    </div>
+                                    <div class="iig-ref-info">
+                                        <div class="iig-ref-label">{{user}}</div>
+                                        <input type="text" class="text_pole iig-ref-name" placeholder="Name" value="">
+                                    </div>
+                                    <div class="iig-ref-actions">
+                                        <label class="menu_button iig-ref-upload-btn" title="Upload photo">
+                                            <i class="fa-solid fa-upload"></i>
+                                            <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
+                                        </label>
+                                        <div class="menu_button iig-ref-delete-btn" title="Remove"><i class="fa-solid fa-trash-can"></i></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="iig-refs-divider"><span>NPCs</span></div>
+
+                            <!-- NPC slots -->
+                            <div class="iig-refs-row iig-refs-npcs">
+                                ${npcSlotsHtml}
+                            </div>
                         </div>
-                        
-                        <!-- User slot -->
-                        <div class="iig-ref-slot" data-ref-type="user">
-                            <div class="iig-ref-label">{{user}}</div>
-                            <div class="iig-ref-preview"><img src="" alt="User" class="iig-ref-thumb"></div>
-                            <input type="text" class="text_pole iig-ref-name" placeholder="User name" value="">
-                            <label class="menu_button iig-ref-upload-btn" title="Upload photo">
-                                <i class="fa-solid fa-upload"></i>
-                                <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
-                            </label>
-                            <div class="menu_button iig-ref-delete-btn" title="Remove"><i class="fa-solid fa-trash"></i></div>
-                        </div>
-                        
-                        <hr>
-                        
-                        <!-- NPC slots -->
-                        ${npcSlotsHtml}
                     </div>
                     
                     <hr>
@@ -2013,8 +2057,9 @@ function bindRefSlotEvents() {
             saveSettings();
         });
 
-        const fileInput = slot.querySelector('.iig-ref-file-input');
-        fileInput?.addEventListener('change', async (e) => {
+        // Bind ALL file inputs in the slot (button + thumbnail overlay)
+        const fileInputs = slot.querySelectorAll('.iig-ref-file-input');
+        const fileHandler = async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
 
@@ -2060,7 +2105,11 @@ function bindRefSlotEvents() {
             }
 
             e.target.value = '';
-        });
+            // Also update the thumb-wrap state class
+            const thumbWrap = slot.querySelector('.iig-ref-thumb-wrap');
+            if (thumbWrap) thumbWrap.classList.add('has-image');
+        };
+        for (const fi of fileInputs) fi.addEventListener('change', fileHandler);
 
         const deleteBtn = slot.querySelector('.iig-ref-delete-btn');
         deleteBtn?.addEventListener('click', () => {
@@ -2077,6 +2126,8 @@ function bindRefSlotEvents() {
 
             const thumb = slot.querySelector('.iig-ref-thumb');
             if (thumb) thumb.src = '';
+            const thumbWrap = slot.querySelector('.iig-ref-thumb-wrap');
+            if (thumbWrap) thumbWrap.classList.remove('has-image');
             const nameEl = slot.querySelector('.iig-ref-name');
             if (nameEl) nameEl.value = '';
 
