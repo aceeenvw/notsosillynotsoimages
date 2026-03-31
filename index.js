@@ -53,6 +53,19 @@ function robustFetch(url, options = {}) {
 // Track messages currently being processed to prevent duplicate processing
 const processingMessages = new Set();
 
+// Cooldown: track recently-processed message IDs to prevent re-trigger loops
+// caused by messageFormatting / innerHTML changes firing CHARACTER_MESSAGE_RENDERED again.
+const recentlyProcessed = new Map(); // messageId → timestamp
+const REPROCESS_COOLDOWN_MS = 5000; // ignore re-triggers within 5 seconds
+
+// Periodically clean up stale entries to prevent memory leaks in long sessions
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, ts] of recentlyProcessed) {
+        if (now - ts > REPROCESS_COOLDOWN_MS * 2) recentlyProcessed.delete(id);
+    }
+}, 30000);
+
 // Session generation stats
 let sessionGenCount = 0;
 let sessionErrorCount = 0;
@@ -1198,6 +1211,15 @@ async function processMessageTags(messageId) {
         return;
     }
     
+    // Cooldown guard: if we just finished processing this message, skip.
+    // This prevents the re-render loop where messageFormatting/innerHTML
+    // re-fires CHARACTER_MESSAGE_RENDERED right after we finish.
+    const lastProcessed = recentlyProcessed.get(messageId);
+    if (lastProcessed && (Date.now() - lastProcessed) < REPROCESS_COOLDOWN_MS) {
+        iigLog('INFO', `Message ${messageId} was recently processed (${Date.now() - lastProcessed}ms ago), skipping re-trigger`);
+        return;
+    }
+    
     const message = context.chat[messageId];
     if (!message || message.is_user) return;
     
@@ -1219,11 +1241,15 @@ async function processMessageTags(messageId) {
     if (!messageElement) {
         console.error('[IIG] Message element not found for ID:', messageId);
         toastr.error('Could not find message element', 'Image Generation');
+        processingMessages.delete(messageId);
         return;
     }
     
     const mesTextEl = messageElement.querySelector('.mes_text');
-    if (!mesTextEl) return;
+    if (!mesTextEl) {
+        processingMessages.delete(messageId);
+        return;
+    }
     
     const processTag = async (tag, index) => {
         const tagId = `iig-${messageId}-${index}`;
@@ -1423,24 +1449,22 @@ async function processMessageTags(messageId) {
     } finally {
         try {
             iigLog('INFO', `Finished processing message ${messageId}`);
+            
+            // Mark this message as recently processed BEFORE any re-render
+            // to prevent CHARACTER_MESSAGE_RENDERED from re-triggering us.
+            recentlyProcessed.set(messageId, Date.now());
+            
             await context.saveChat();
             
-            if (typeof context.messageFormatting === 'function' && !processMessageTags._formatting) {
-                processMessageTags._formatting = true;
-                try {
-                    const formattedMessage = context.messageFormatting(
-                        message.mes,
-                        message.name,
-                        message.is_system,
-                        message.is_user,
-                        messageId
-                    );
-                    mesTextEl.innerHTML = formattedMessage;
-                    iigLog('INFO', 'Message re-rendered via messageFormatting');
-                } finally {
-                    processMessageTags._formatting = false;
-                }
-            }
+            // NOTE: Removed messageFormatting + innerHTML re-render.
+            // This was causing "Maximum call stack size exceeded" because:
+            //   1. messageFormatting() can internally trigger deep recursion
+            //      when processing complex HTML with embedded <img> tags
+            //   2. Setting innerHTML can fire MutationObservers / ST events
+            //      that re-trigger CHARACTER_MESSAGE_RENDERED → infinite loop
+            // The images are already in the DOM (replaced loading placeholders),
+            // and message.mes is updated — SillyTavern will re-format on next
+            // natural render cycle (swipe, reload, etc.).
         } finally {
             processingMessages.delete(messageId);
         }
@@ -1534,6 +1558,7 @@ async function regenerateMessageImages(messageId) {
     }
     
     processingMessages.delete(messageId);
+    recentlyProcessed.set(messageId, Date.now());
     await context.saveChat();
     iigLog('INFO', `Regeneration complete for message ${messageId}`);
 }
