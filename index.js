@@ -58,6 +58,12 @@ const processingMessages = new Set();
 const recentlyProcessed = new Map(); // messageId → timestamp
 const REPROCESS_COOLDOWN_MS = 5000; // ignore re-triggers within 5 seconds
 
+// Global re-entry guard: absolute protection against stack overflow.
+// If onMessageReceived is called while we're already inside onMessageReceived
+// (for ANY message), something is recursing and we must bail.
+let _eventHandlerDepth = 0;
+const MAX_EVENT_HANDLER_DEPTH = 2; // allow 1 level of nesting, block deeper
+
 // Periodically clean up stale entries to prevent memory leaks in long sessions
 setInterval(() => {
     const now = Date.now();
@@ -1125,26 +1131,77 @@ async function parseImageTags(text, options = {}) {
 
 /**
  * Resolve the error image path dynamically based on extension install location.
- * BUG FIX: The old hardcoded path assumed the folder name 'sillyimages',
- * which breaks when installed from the new repo 'notsosillynotsoimages'.
+ * BUG FIX (v2.0.1): SillyTavern 1.17.0 changed how scripts are loaded (webpack
+ * bundling, new splash screen). The old script[src] detection may not find our
+ * script tag at load time. Now we also check CSS link elements and use multiple
+ * fallback strategies. Additionally, the path is resolved lazily on first use
+ * (not at module load time) so the DOM has time to settle.
  */
+let _cachedErrorImagePath = null;
+
 function getErrorImagePath() {
-    // Try to find our own script element to determine our base path
+    if (_cachedErrorImagePath) return _cachedErrorImagePath;
+
+    // Strategy 1: find our script element
     const scripts = document.querySelectorAll('script[src*="index.js"]');
     for (const script of scripts) {
         const src = script.getAttribute('src') || '';
         if (src.includes('inline_image_gen') || src.includes('sillyimages') || src.includes('notsosillynotsoimages')) {
             const basePath = src.substring(0, src.lastIndexOf('/'));
-            return `${basePath}/error.svg`;
+            _cachedErrorImagePath = `${basePath}/error.svg`;
+            return _cachedErrorImagePath;
         }
     }
-    // Fallback: use extensionSettings to guess, or a generic relative path
-    // SillyTavern third-party extensions live in /scripts/extensions/third-party/<folder>/
-    return '/scripts/extensions/third-party/notsosillynotsoimages/error.svg';
-}
 
-// Resolve once at load time
-const ERROR_IMAGE_PATH = getErrorImagePath();
+    // Strategy 2: find our CSS link element (style.css is always loaded by ST)
+    const links = document.querySelectorAll('link[rel="stylesheet"][href*="style.css"]');
+    for (const link of links) {
+        const href = link.getAttribute('href') || '';
+        if (href.includes('sillyimages') || href.includes('notsosillynotsoimages') || href.includes('inline_image_gen')) {
+            const basePath = href.substring(0, href.lastIndexOf('/'));
+            _cachedErrorImagePath = `${basePath}/error.svg`;
+            return _cachedErrorImagePath;
+        }
+    }
+
+    // Strategy 3: detect from any DOM element our extension created
+    const settingsEl = document.querySelector('.iig-settings');
+    if (settingsEl) {
+        // Walk up to find our base URL from any loaded resource
+        const anyImg = document.querySelector('img.iig-error-image[src], img.iig-ref-thumb[src]');
+        if (anyImg?.src) {
+            const basePath = anyImg.src.substring(0, anyImg.src.lastIndexOf('/'));
+            _cachedErrorImagePath = `${basePath}/error.svg`;
+            return _cachedErrorImagePath;
+        }
+    }
+
+    // Strategy 4: try both possible folder names and pick whichever exists
+    // This covers renamed installs and fresh installs alike
+    const possiblePaths = [
+        '/scripts/extensions/third-party/notsosillynotsoimages/error.svg',
+        '/scripts/extensions/third-party/sillyimages/error.svg',
+    ];
+    // We can't do async here, so return the first candidate and verify later
+    _cachedErrorImagePath = possiblePaths[0];
+
+    // Async verification: try to HEAD both paths and cache the correct one
+    (async () => {
+        for (const path of possiblePaths) {
+            try {
+                const resp = await fetch(path, { method: 'HEAD' });
+                if (resp.ok) {
+                    _cachedErrorImagePath = path;
+                    iigLog('INFO', `error.svg resolved to: ${path}`);
+                    return;
+                }
+            } catch (e) { /* ignore */ }
+        }
+        iigLog('WARN', 'error.svg not found at any expected path');
+    })();
+
+    return _cachedErrorImagePath;
+}
 
 /**
  * Create loading placeholder element
@@ -1179,7 +1236,7 @@ function createLoadingPlaceholder(tagId) {
 function createErrorPlaceholder(tagId, errorMessage, tagInfo) {
     const img = document.createElement('img');
     img.className = 'iig-error-image';
-    img.src = ERROR_IMAGE_PATH;
+    img.src = getErrorImagePath();
     img.alt = 'Generation error';
     img.title = `Error: ${errorMessage}`;
     img.dataset.tagId = tagId;
@@ -1430,7 +1487,7 @@ async function processMessageTags(messageId) {
             loadingPlaceholder.replaceWith(errorPlaceholder);
             
             if (tag.isNewFormat) {
-                const errorTag = tag.fullMatch.replace(/src\s*=\s*(['"])[^'"]*\1/i, `src="${ERROR_IMAGE_PATH}"`);
+                const errorTag = tag.fullMatch.replace(/src\s*=\s*(['"])[^'"]*\1/i, `src="${getErrorImagePath()}"`);
                 message.mes = message.mes.replace(tag.fullMatch, errorTag);
             } else {
                 const errorMarker = `[IMG:ERROR:${error.message.substring(0, 50)}]`;
@@ -1614,22 +1671,36 @@ function addButtonsToExistingMessages() {
  * Handle CHARACTER_MESSAGE_RENDERED event
  */
 async function onMessageReceived(messageId) {
-    iigLog('INFO', `onMessageReceived: ${messageId}`);
-    
-    const settings = getSettings();
-    if (!settings.enabled) {
-        iigLog('INFO', 'Extension disabled, skipping');
+    // Circuit breaker: prevent stack overflow from recursive event re-triggering.
+    // SillyTavern 1.17.0 can emit CHARACTER_MESSAGE_RENDERED from multiple paths
+    // (finalizeIntermediaryMessage, onFinishStreaming, onErrorStreaming, saveReply)
+    // and any of those paths could be triggered while we're still processing.
+    if (_eventHandlerDepth >= MAX_EVENT_HANDLER_DEPTH) {
+        iigLog('WARN', `Blocked recursive onMessageReceived (depth=${_eventHandlerDepth}) for message ${messageId}`);
         return;
     }
+    _eventHandlerDepth++;
     
-    const context = SillyTavern.getContext();
-    
-    const messageElement = document.querySelector(`#chat .mes[mesid="${messageId}"]`);
-    if (!messageElement) return;
-    
-    addRegenerateButton(messageElement, messageId);
-    
-    await processMessageTags(messageId);
+    try {
+        iigLog('INFO', `onMessageReceived: ${messageId}`);
+        
+        const settings = getSettings();
+        if (!settings.enabled) {
+            iigLog('INFO', 'Extension disabled, skipping');
+            return;
+        }
+        
+        const context = SillyTavern.getContext();
+        
+        const messageElement = document.querySelector(`#chat .mes[mesid="${messageId}"]`);
+        if (!messageElement) return;
+        
+        addRegenerateButton(messageElement, messageId);
+        
+        await processMessageTags(messageId);
+    } finally {
+        _eventHandlerDepth--;
+    }
 }
 
 /**
