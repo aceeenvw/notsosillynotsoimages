@@ -1,9 +1,30 @@
 /**
- * Inline Image Generation Extension for SillyTavern
- * by aceeenvw — https://github.com/aceeenvw/notsosillynotsoimages
+ * notsosillynotsoimages — Inline Image Generation for SillyTavern
+ * Unified character reference system, NPC slots, iOS compatibility layer.
  *
- * Intercepts [IMG:GEN:{json}] tags in AI messages and generates images via configured API.
- * Supports OpenAI-compatible, Gemini-compatible (nano-banana), and Naistera/Grok endpoints.
+ * Copyright (C) 2025-2026 aceeenvw
+ * Repository: https://github.com/aceeenvw/notsosillynotsoimages
+ *
+ * Based on SillyImages by 0xl0cal
+ * Original: https://github.com/0xl0cal/sillyimages
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ *
+ * NOTICE: If you use or adapt any part of this code in your own project,
+ * you must retain this copyright notice and provide attribution to the
+ * original author (aceeenvw) in a prominent location (file header,
+ * README, or UI credits).
  */
 
 const MODULE_NAME = 'inline_image_gen';
