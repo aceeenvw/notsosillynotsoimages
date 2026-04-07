@@ -264,8 +264,27 @@ originally forked from [sillyimages](https://github.com/0xl0cal/sillyimages) by 
 
 rewritten and extended by [aceeenvw](https://github.com/aceeenvw) — unified reference system, character/user/NPC slots, Naistera support, iOS compatibility, lightbox, redesigned settings UI, and more.
 
----
+## License
 
-<p align="center">
-  <sub>MIT license · made by <a href="https://github.com/aceeenvw">aceeenvw</a></sub>
-</p>
+**AGPL-3.0-or-later** — see [LICENSE](./LICENSE) for the full text.
+
+Copyright © 2025–2026 **aceeenvw**
+
+### What this means for forks and derivatives
+
+- ✅ You **can** use, modify, and redistribute this code
+- ✅ You **can** use it in your own SillyTavern extensions
+- ⚠️ You **must** keep the copyright notice and license header intact
+- ⚠️ You **must** state changes you made (prominent notice, not a buried comment)
+- ⚠️ You **must** release your modified version under the same AGPL-3.0 license
+- ⚠️ You **must** credit the author (aceeenvw) of the fork and the author of the original extension (0xl0cal) in file headers or README
+
+### Attribution
+
+If you incorporate code from this project, add the following to your file header:
+
+```
+Based on notsosillynotsoimages by aceeenvw (https://github.com/aceeenvw/notsosillynotsoimages)
+Original: SillyImages by 0xl0cal (https://github.com/0xl0cal/sillyimages)
+Licensed under AGPL-3.0-or-later
+```
