@@ -1840,6 +1840,11 @@ function createErrorPlaceholder(tagId, errorMessage, tagInfo) {
         retryBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            // Hide button immediately so user knows it registered
+            retryBtn.disabled = true;
+            retryBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Retrying...</span>`;
+            retryBtn.style.opacity = '0.6';
+            retryBtn.style.pointerEvents = 'none';
             regenerateSingleImage(img);
         });
 
