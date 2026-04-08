@@ -1,290 +1,289 @@
-<h1 align="center">notsosillynotsoimages</h1>
+<div align="center">
 
-<p align="center">
-  <b>inline image generation for SillyTavern</b><br>
-  <sub>images appear right inside chat messages — no separate panel, no workflow interruption</sub>
-</p>
+# notsosillynotsoimages
 
-<p align="center">
-  <a href="https://github.com/aceeenvw/notsosillynotsoimages/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2d5a3a?style=flat-square" alt="License"></a>
-  <a href="https://github.com/SillyTavern/SillyTavern"><img src="https://img.shields.io/badge/SillyTavern-extension-3a7a4a?style=flat-square" alt="SillyTavern"></a>
-</p>
+**Inline image generation for SillyTavern**
 
----
+Images appear right inside chat messages.
+No separate panel. No workflow interruption.
 
-## what it does
+[![License](https://img.shields.io/badge/license-AGPL--3.0-2d5a3a?style=flat-square)](LICENSE)
+[![SillyTavern](https://img.shields.io/badge/SillyTavern-extension-3a7a4a?style=flat-square)](https://github.com/SillyTavern/SillyTavern)
+[![Version](https://img.shields.io/badge/version-2.1.0-4a6a8a?style=flat-square)](manifest.json)
 
-the AI writes a special tag in its message → the extension intercepts it → calls your image API → replaces the tag with the generated image. everything happens inline, in the chat, automatically.
-
-supports **OpenAI-compatible**, **Gemini / Nano-Banana**, and **Naistera / Grok** backends.
+</div>
 
 ---
 
-## features
+## How it works
 
-| | |
-|---|---|
-| 🖼 **inline generation** | images render directly in chat messages |
-| 🔁 **per-message regenerate** | retry any/all images from the message menu |
-| 👤 **character references** | upload ref photos for consistent characters (gemini & naistera) |
-| 🎯 **smart NPC matching** | NPC refs only sent when their name is in the prompt |
-| 🔄 **auto-retry** | exponential backoff on 429 / 502 / 503 / 504 errors |
-| 📱 **iOS support** | XHR transport with adjusted timeouts for Safari |
-| 🔍 **image lightbox** | click any generated image to view full-size |
-| ⏱ **live progress** | animated spinner + elapsed timer during generation |
-| 📋 **session stats** | tracks generated / failed count per session |
-| 🐛 **debug logs** | built-in log buffer with one-click export |
-| 🎨 **fae-themed error SVG** | custom forest-themed error placeholder |
+```
+AI writes a message with an image tag
+      |
+      v
+Extension intercepts the tag, shows a loading spinner
+      |
+      v
+Collects your uploaded reference images (char, user, NPCs)
+      |
+      v
+Sends the request to your configured image API
+      |
+      v
+Generated image replaces the spinner inline in the chat
+```
+
+That's it. Fully automatic once configured.
 
 ---
 
-## install
+## Install
 
-1. open SillyTavern → **Extensions** → **Install Extension**
-2. paste the URL:
+1. Open SillyTavern
+2. Go to **Extensions** > **Install Extension**
+3. Paste:
    ```
    https://github.com/aceeenvw/notsosillynotsoimages
    ```
-3. click **Install**, reload
+4. Click **Install**, reload the page
 
-find it in the sidebar as **Inline Image Generation** (look for the 🍃 leaf icon).
+The extension appears in the sidebar as **Inline Image Generation**.
+A green dot in the header means it's active.
 
 ---
 
-## setup
+## Supported backends
 
-open the extension panel in the sidebar.
+| Backend | Endpoint | Reference images | Notes |
+|---------|----------|:---:|-------|
+| **OpenAI-compatible** | `/v1/images/generations` | -- | DALL-E, Midjourney proxies, SD, FLUX, gpt-image, etc. |
+| **Gemini / Nano-Banana** | `/v1beta/models/{model}:generateContent` | Up to 4 | Nano Banana, Nano Banana Pro, compatible proxies |
+| **Naistera** | `/api/generate` | Up to 4 | Models: `grok`, `nano banana`. Auto-defaults to `naistera.org` |
 
-### API configuration
+---
 
-| setting | what it does |
-|---|---|
-| **API Type** | `OpenAI-compatible` / `Gemini / Nano-Banana` / `Naistera / Grok` |
-| **Endpoint URL** | base URL of your image API |
-| **API Key** | your auth token |
-| **Model** | pick from the dropdown (click refresh to fetch). not needed for Naistera |
-| **Test Connection** | verify everything works before generating |
+## Quick setup
 
-> **tip:** the header shows a green status dot when the extension is enabled — quick way to check without opening the panel.
+Open the extension panel in the sidebar and configure:
 
-### generation settings
+| Setting | Description |
+|---------|-------------|
+| **API Type** | Pick your backend |
+| **Endpoint URL** | Base URL of your API (auto-fills for Naistera) |
+| **API Key** | Your auth token |
+| **Model** | Select from dropdown (click refresh to fetch). Not needed for Naistera |
+
+Hit **Test Connection** to verify before generating.
+
+### Backend-specific settings
 
 <details>
 <summary><b>OpenAI-compatible</b></summary>
 
-- **Size** — `1024x1024`, `1792x1024`, `1024x1792`, `512x512`
-- **Quality** — `standard` or `hd`
+| Setting | Options |
+|---------|---------|
+| Size | `1024x1024`, `1792x1024`, `1024x1792`, `512x512` |
+| Quality | `standard`, `hd` |
 
-works with DALL-E, Midjourney proxies, Stable Diffusion, FLUX, and any OpenAI-compatible images API.
-
-endpoint: `/v1/images/generations`
 </details>
 
 <details>
 <summary><b>Gemini / Nano-Banana</b></summary>
 
-- **Aspect Ratio** — `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9`
-- **Resolution** — `1K`, `2K`, `4K`
+| Setting | Options |
+|---------|---------|
+| Aspect Ratio | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9` |
+| Resolution | `1K`, `2K`, `4K` |
 
-works with Nano Banana, Nano Banana Pro, and compatible proxies.
-
-endpoint: `/v1beta/models/{model}:generateContent`
 </details>
 
 <details>
-<summary><b>Naistera / Grok</b></summary>
+<summary><b>Naistera</b></summary>
 
-- **Aspect Ratio** — `1:1`, `3:2`, `2:3`
-- **Preset** — None, Digital, Realism
+| Setting | Options |
+|---------|---------|
+| Model | `grok`, `nano banana` |
+| Aspect Ratio | `1:1`, `16:9`, `9:16`, `3:2`, `2:3` |
+| Preset | None, Digital, Realism |
 
-endpoint: `/api/generate`
+If you leave the endpoint blank, it defaults to `https://naistera.org`.
+
 </details>
 
 ---
 
-## character references
+## Character references
 
-> **available for Gemini / Nano-Banana and Naistera only.** OpenAI-compatible doesn't support reference images.
+> Available for **Gemini / Nano-Banana** and **Naistera** only.
 
-upload reference photos so the AI generates characters with consistent appearance. the extension compresses images to **768px max** before sending.
+Upload reference photos so generated characters look consistent across images. The extension compresses them to 768px max before sending.
 
-### slots
+### Reference slots
 
-| slot | behavior |
-|---|---|
-| **{{char}}** | always sent — automatically linked to current character |
-| **{{user}}** | always sent — your persona's reference |
-| **NPC 1–4** | conditionally sent — only when the NPC's name appears in the generation prompt |
+| Slot | When it's sent |
+|------|---------------|
+| **char** | Always (current character) |
+| **user** | Always (your persona) |
+| **NPC 1--4** | Only when the NPC's name appears in the prompt |
 
-### ⚠️ reference limit: 4 images max per request
+### How NPC matching works
 
-most image models (Nano-Banana, for example) accept a **maximum of 4 reference images** per generation request. the extension enforces this limit. plan your slots accordingly:
-
-| char | user | NPCs | total | valid? |
-|:---:|:---:|:---:|:---:|:---:|
-| 1 | 1 | up to 2 | 4 | ✅ |
-| 1 | 0 | up to 3 | 4 | ✅ |
-| 0 | 1 | up to 3 | 4 | ✅ |
-| 0 | 0 | up to 4 | 4 | ✅ |
-| 1 | 1 | 3+ matched | **over limit** | ⚠️ capped at 4 |
-
-if more than 4 refs would be sent, the extension **silently caps at 4** — char and user take priority, then NPCs in order. so if you have char + user + 4 NPCs all matching, only char + user + the first 2 matched NPCs get sent.
-
-**practical advice:**
-- for 1-on-1 chats → use char + user slots, leave NPCs empty
-- for group scenes → skip user ref if you're not in the scene, use NPC slots for side characters
-- NPC matching is case-insensitive and partial — any word (>2 chars) from the NPC name triggers inclusion
-
-### ⚠️ important: the AI must include character names in the prompt
-
-for NPC references to activate, the character's name **must actually appear in the generated image prompt** — the one inside the `data-iig-instruction` tag. the extension matches NPC names against the `prompt` field, so if the AI writes a vague prompt like `"two people talking in a room"` without naming anyone, no NPC refs will be attached.
-
-make sure your SillyTavern image generation prompt (in `prompt.md` or your system prompt) instructs the AI to **include character names in the image prompt**. for example:
+The extension checks the generation prompt for NPC names. Matching is **case-insensitive** and **partial** -- any word longer than 2 characters from the name triggers it.
 
 ```
-✅  "prompt": "Axel and Charlotte sitting on the couch, warm lighting"
-❌  "prompt": "two characters sitting on the couch, warm lighting"
+"Axel and Charlotte sitting on a couch"
+  -> matches NPC named "Axel"
+  -> matches NPC named "Charlotte"
+
+"Two people sitting on a couch"
+  -> matches nothing (no names)
 ```
 
-the first version triggers refs for both Axel and Charlotte. the second triggers nothing.
+Make sure your LLM prompt instructs the AI to include character names in image descriptions.
 
-char and user refs are always sent regardless of the prompt — only NPC slots depend on name matching.
+### 4-image limit
+
+Most backends accept a maximum of **4 reference images** per request. Priority order:
+
+1. char ref
+2. user ref
+3. Matched NPCs (in slot order)
+
+If more than 4 would be sent, the rest are silently dropped.
 
 ---
 
-## tag format
+## Image tag format
 
-the AI writes image tags in its messages. the extension parses and replaces them with generated images.
+The AI writes tags in messages. The extension parses them and generates images.
 
-### recommended (new format)
+### Recommended format
 
 ```html
-<img data-iig-instruction='{"style":"semi_realistic","prompt":"Medium shot, 50mm f/1.8 shallow DoF. Axel in black t-shirt reaching past Charlotte to a high shelf, warm kitchen light, painterly illustration.","aspect_ratio":"3:4","image_size":"2K"}' src="[IMG:GEN]">
+<img data-iig-instruction='{"style":"semi_realistic","prompt":"Axel reaching past Charlotte to a high shelf, warm kitchen light"}' src="[IMG:GEN]">
 ```
 
-after generation, `src` updates to the real path:
-```html
-<img data-iig-instruction='{"style":"semi_realistic","prompt":"..."}' src="/user/images/character/iig_2026-03-06.jpg">
-```
+After generation, `src` updates to the saved file path.
 
-### legacy format (still supported)
+### Legacy format (still works)
 
 ```
-[IMG:GEN:{"style":"semi_realistic","prompt":"Axel leaning against the doorframe, moody lighting"}]
+[IMG:GEN:{"style":"semi_realistic","prompt":"Axel leaning against the doorframe"}]
 ```
 
-### tag parameters
+### Available parameters
 
-| parameter | required | description | example |
-|---|:---:|---|---|
-| `prompt` | ✅ | what to generate — include character names for ref matching | `"Axel reaching past Charlotte to a high shelf, warm light"` |
-| `style` | | style prefix prepended to the prompt | `"semi_realistic"`, `"anime"`, `"oil painting"` |
-| `aspect_ratio` | | override default aspect ratio | `"16:9"`, `"9:16"`, `"1:1"` |
-| `image_size` | | resolution override (Nano-Banana) | `"1K"`, `"2K"`, `"4K"` |
-| `quality` | | quality tier (OpenAI) | `"standard"`, `"hd"` |
-| `preset` | | style preset (Naistera) | `"digital"`, `"realism"` |
+| Parameter | Required | Description |
+|-----------|:---:|-------------|
+| `prompt` | yes | What to generate. Include character names for ref matching |
+| `style` | | Style prefix prepended to the prompt |
+| `aspect_ratio` | | Override aspect ratio (`16:9`, `1:1`, etc.) |
+| `image_size` | | Resolution override for Nano-Banana (`1K`, `2K`, `4K`) |
+| `quality` | | Quality tier for OpenAI (`standard`, `hd`) |
+| `preset` | | Style preset for Naistera (`digital`, `realism`) |
+
+### External blocks
+
+Enable **External blocks support** in settings if you use other ST extensions that place image tags in `message.extra.extblocks` instead of the main message body.
 
 ---
 
-## how it works
+## Image controls
 
-```
-AI writes message with [IMG:GEN] tag
-        ↓
-extension parses tag, shows loading spinner with timer
-        ↓
-collects reference images (char → user → matched NPCs, up to 4)
-        ↓
-sends request to your configured API
-        ↓
-image generated → saved to SillyTavern storage → displayed inline
-        ↓
-if failed → shows error.svg → use regenerate button to retry
-```
+### On the image
 
-the **regenerate button** (stacked images icon) appears in every AI message's action menu. click it to re-generate all images in that message.
+- **Desktop:** hover over any generated image to reveal download and regenerate buttons in the corners
+- **Mobile:** tap the image to show buttons (auto-hide after 4s), double-tap for full-size view
 
-click any generated image to open it **full-size in a lightbox** overlay (press Escape or click outside to close).
+### In the lightbox
 
----
+Click (desktop) or double-tap (mobile) any image to open it full-size. The lightbox includes download and regenerate buttons.
 
-## retry behavior
+### On errors
 
-| setting | default | description |
-|---|---|---|
-| **Max Retries** | `0` | auto-retries on 429/502/503/504 errors. set to `0` for manual-only |
-| **Delay** | `1000ms` | base delay between retries, doubles each attempt |
+Failed generations show an error image with a **Retry** button. Click it to regenerate that specific image without touching the rest of the message.
 
-with retries at `0`, failed images show the error SVG immediately — use the regenerate button to retry manually whenever you want.
+### In the message menu
+
+Every AI message has a regenerate button (stacked images icon) that re-generates **all** images in that message.
 
 ---
 
-## iOS notes
+## Retry behavior
 
-the extension detects iOS/Safari and switches from `fetch()` + `AbortController` to `XMLHttpRequest` with a dedicated timeout. this avoids Safari's aggressive background tab suspension killing long requests.
-
-| | desktop | iOS |
-|---|---|---|
-| **transport** | fetch + AbortController | XMLHttpRequest |
-| **timeout** | 5 minutes | 3 minutes |
-
-if your API consistently takes longer than 3 minutes, iOS may still time out. try a faster model or smaller resolution.
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Max Retries | `0` | Auto-retries on 429/502/503/504/timeout. `0` = manual only |
+| Delay | `1000ms` | Base delay between retries, doubles each attempt |
 
 ---
 
-## files
+## iOS
+
+The extension detects iOS/Safari and switches transport to avoid Safari killing long requests in background tabs.
+
+| | Desktop | iOS |
+|---|---------|-----|
+| Transport | `fetch` + AbortController | XMLHttpRequest |
+| Timeout | 5 min | 3 min |
+
+---
+
+## Files
 
 ```
-├── manifest.json    extension metadata (v2.0.0)
-├── index.js         core logic — parsing, API calls, settings UI, lightbox, refs
-├── style.css        styles — settings panel, loading states, lightbox, animations
-├── error.svg        fae-themed error placeholder (forest/dark green)
-├── prompt.md        example LLM prompt template for image generation
-└── README.md        this file
+index.js         core logic, API calls, settings UI, image controls
+style.css        all styles, animations, responsive rules
+manifest.json    extension metadata
+error.svg        error placeholder image
+prompt.md        example LLM prompt template
+LICENSE          AGPL-3.0
+README.md        this file
 ```
 
 ---
 
-## troubleshooting
+## Troubleshooting
 
-| problem | fix |
-|---|---|
-| no images generating | check extension is enabled (green dot in header), endpoint/key are set, Test Connection passes |
-| wrong model | click the refresh ↻ button next to model dropdown — make sure you pick an **image** model, not a text/embedding model |
-| characters look different every time | upload reference photos in the References section (Gemini/Naistera only) |
-| timeout on iOS | 3-min limit on iOS — try a faster endpoint or lower resolution |
-| want to retry a failed image | click the regenerate button (stacked images icon) in the message action menu |
-| need more details | export logs from the Debug section and check for `[ERROR]` entries |
+| Problem | Solution |
+|---------|----------|
+| No images generating | Check the green dot is active, endpoint and key are set, Test Connection passes |
+| Wrong model selected | Click refresh next to model dropdown. Pick an **image** model, not text/embedding |
+| Characters look different each time | Upload reference photos in the References section |
+| Naistera not working | Make sure API key is set. Endpoint auto-defaults to naistera.org if blank |
+| Timeout on iOS | 3-minute limit. Try a faster endpoint or lower resolution |
+| Failed image, want to retry | Click the Retry button on the error image, or use the message menu regenerate button |
+| Need detailed logs | Export from the Debug section, look for `[ERROR]` entries |
 
 ---
 
-## credits
+## Credits
 
-originally forked from [sillyimages](https://github.com/0xl0cal/sillyimages) by [0xl0cal](https://github.com/0xl0cal).
+Forked from [sillyimages](https://github.com/0xl0cal/sillyimages) by [0xl0cal](https://github.com/0xl0cal).
 
-rewritten and extended by [aceeenvw](https://github.com/aceeenvw) — unified reference system, character/user/NPC slots, Naistera support, iOS compatibility, lightbox, redesigned settings UI, and more.
+Rewritten by [aceeenvw](https://github.com/aceeenvw) -- character reference system, NPC slots, Naistera/Grok support, iOS compatibility, image action buttons, lightbox with controls, error retry, external blocks support, robust JSON parsing, and more.
+
+---
 
 ## License
 
-**AGPL-3.0-or-later** — see [LICENSE](./LICENSE) for the full text.
+**AGPL-3.0-or-later** -- see [LICENSE](./LICENSE).
 
-Copyright © 2025–2026 **aceeenvw**
+Copyright 2025--2026 **aceeenvw**
 
-### What this means for forks and derivatives
+If you fork or adapt this code:
 
-- ✅ You **can** use, modify, and redistribute this code
-- ✅ You **can** use it in your own SillyTavern extensions
-- ⚠️ You **must** keep the copyright notice and license header intact
-- ⚠️ You **must** state changes you made (prominent notice, not a buried comment)
-- ⚠️ You **must** release your modified version under the same AGPL-3.0 license
-- ⚠️ You **must** credit the author (aceeenvw) of the fork and the author of the original extension (0xl0cal) in file headers or README
-
-### Attribution
-
-If you incorporate code from this project, add the following to your file header:
+- Keep the copyright notice and license header in source files
+- State your changes prominently
+- Release under the same AGPL-3.0 license
+- Credit both aceeenvw and 0xl0cal
 
 ```
-Based on notsosillynotsoimages by aceeenvw (https://github.com/aceeenvw/notsosillynotsoimages)
-Original: SillyImages by 0xl0cal (https://github.com/0xl0cal/sillyimages)
+Based on notsosillynotsoimages by aceeenvw
+https://github.com/aceeenvw/notsosillynotsoimages
+
+Original: SillyImages by 0xl0cal
+https://github.com/0xl0cal/sillyimages
+
 Licensed under AGPL-3.0-or-later
 ```
