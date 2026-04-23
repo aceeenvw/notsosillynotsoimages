@@ -58,7 +58,7 @@ A green dot in the header means it's active.
 |---------|----------|:---:|-------|
 | **OpenAI-compatible** | `/v1/images/generations` | Up to 4 | DALL-E, gpt-image, SD, FLUX, local proxies |
 | **Gemini / Nano-Banana** | `/v1beta/models/{model}:generateContent` | Up to 4 | Nano Banana, Nano Banana Pro, compatible proxies |
-| **Aggregator (rout.my, OpenRouter, ...)** | Auto-detected `provider/model` format | Up to 4 | Routes Gemini models to Gemini shape, others to OpenAI shape |
+| **Aggregator (OpenRouter, ...)** | Auto-detected `provider/model` format | Up to 4 | Routes Gemini models to Gemini shape, others to OpenAI shape |
 | **Naistera** | `/api/generate` | Up to 4 | Models: `grok`, `nano banana`. Auto-defaults to `naistera.org` |
 
 ---
