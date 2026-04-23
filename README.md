@@ -70,7 +70,7 @@ The extension appears in the sidebar as **⊹ Inline Image Generation ⊹**. Gre
 </tr>
 <tr>
 <td>🔵 <b>Aggregators</b></td>
-<td>Auto-detected from <code>provider/model</code> format (rout.my, OpenRouter, etc.). Routes Gemini models → Gemini shape, everything else → OpenAI shape. Zero manual config.</td>
+<td>Auto-detected from <code>provider/model</code> format (OpenRouter, etc.). Routes Gemini models → Gemini shape, everything else → OpenAI shape. Zero manual config.</td>
 <td align="center">up to 4</td>
 </tr>
 <tr>
