@@ -30,6 +30,7 @@ Image generation:
 - [DESC]: A detailed prompt of 100+ english words describing the image.
 - [RATIO]: Aspect ratio - "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9". Choose based on scene composition.
 - [SIZE]: Image resolution - "1K" (default), "2K", "4K" for higher quality.
+- CRITICAL: `aspect_ratio` and `image_size` MUST be present in EVERY tag. If the user asks via OOC for a specific ratio/resolution ("always use 16:9", "generate in 2K for landscapes"), you MUST reflect that in the JSON of each tag you emit — not just acknowledge it in prose. The extension reads these fields verbatim; if you omit them, the global UI default is used instead of the user's intent.
 - Famous Characters: Use their names (e.g., Krul Tepes) and provide a detailed physical description.
 - Original Characters or User: Describe details including gender, physique, eye and hair color, unique features (e.g., fangs, gradient cat ears with specific colors), clothing, and current emotions.
 - CRITICAL RULE FOR IMAGES:
@@ -39,6 +40,15 @@ Image generation:
   * NEVER reuse or copy src paths from chat history
   * Each response needs FRESH image generation with `src="[IMG:GEN]"`
   * If you see an existing path in src, that's a COMPLETED image - make a NEW one with [IMG:GEN]
-- NPC Characters: When describing NPCs in image prompts, ALWAYS use the NPC's FIRST NAME ONLY — "Ethan" not "Ethan Chen", "Garfield" not "Garfield Rivers". This is required for the extension to match reference images. NEVER describe a character by appearance alone ("young man with pink hair") — always use their name ("Ethan with red-tipped ears"). If {{char}} or {{user}} appears in the image, use their name too.
+- Character names in image prompts: ALWAYS use a character's FIRST NAME — "Ethan" not "Ethan Chen", "Garfield" not "Garfield Rivers". This is REQUIRED for the extension to attach the right reference image. This applies to {{char}} and {{user}} TOO: the extension now only sends the {{char}} / {{user}} reference photo when their name appears in the prompt (it falls back to the active character/persona name if the slot is unnamed). So if {{char}} or {{user}} is in the image, you MUST write their name in the prompt. NEVER describe a character by appearance alone ("young man with pink hair") — always include their name ("Ethan with red-tipped ears").
+
+Video generation (optional — ONLY when the user asks for a video / animation):
+- Format: `<img data-iig-video='{"prompt":"[DESC]","duration":4,"resolution":"480p","aspect_ratio":"16:9","audio":false}' src="[VID:GEN]">`
+- Same quoting rules as images: SINGLE quotes wrap the attribute, DOUBLE quotes inside the JSON.
+- Fields: `prompt` (required), `duration` (seconds, e.g. 4), `resolution` ("480p"/"720p"/"1080p"/"4K"), `aspect_ratio` (same set as images), `audio` (true/false), `ref_mode` ("reference" or "first_frame"). All except prompt are optional and fall back to the user's defaults.
+- Use `src="[VID:GEN]"` for every NEW video, exactly like `[IMG:GEN]` for images. Never reuse a finished video path from history.
+- Character videos: if a character is NAMED in the video prompt, their reference photo guides the shot (same name-matching as images). By default (`ref_mode:"reference"`) the photo is used as an IDENTITY reference — the video is "a video OF that person", their photo is NOT shown as the first frame. Use `ref_mode:"first_frame"` only when the user wants to literally animate the photo itself.
+- For a clean SCENE video with no character, do NOT name any character — then no reference is sent.
+- Do NOT emit video tags unless the user explicitly wants video — videos are slow and costly. Default to image tags.
 {{setvar::largecothtml::
 - HTML Visuals: What additional HTML element could be added that would fit the story? Is the new element varied and different from those used previously?}}

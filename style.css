@@ -6,6 +6,32 @@
 
 /* ==================== Settings Panel ==================== */
 
+/* Strip the default bottom margin off OUR drawer header so the chevron
+   bar sits flush with the content beneath it. Scoped via :has() so we
+   don't touch any other extension's drawer header on the page.
+   Uses .inline-drawer-toggle.inline-drawer-header (both classes) plus
+   !important because ST stock CSS wins via cascade order otherwise —
+   plain DevTools inline style without !important is enough to override
+   ST's rule, confirming ST does NOT use !important itself, but our
+   stylesheet loses to ST on load-order in normal cascade. */
+.inline-drawer:has(.iig-settings) > .inline-drawer-toggle.inline-drawer-header {
+    margin-bottom: 0 !important;
+}
+
+/* Local token layer (theme-derived) so the settings panel stays consistent and
+   never renders a neon accent. Mapped from the SmartTheme vars. */
+.iig-settings {
+    --iig-surface: color-mix(in srgb, var(--SmartThemeBlurTintColor, rgba(20, 20, 24, 0.96)) 86%, rgba(255, 255, 255, 0.04) 14%);
+    --iig-surface-strong: color-mix(in srgb, var(--SmartThemeBlurTintColor, rgba(20, 20, 24, 0.98)) 78%, rgba(255, 255, 255, 0.09) 22%);
+    --iig-border: color-mix(in srgb, var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16)) 78%, rgba(255, 255, 255, 0.12) 22%);
+    --iig-accent: var(--SmartThemeQuoteColor, #6aa9ff);
+    --iig-accent-soft: color-mix(in srgb, var(--SmartThemeQuoteColor, #6aa9ff) 16%, transparent);
+    --iig-accent-muted: color-mix(in srgb, var(--SmartThemeQuoteColor, #6aa9ff) 70%, var(--iig-surface) 30%);
+    --iig-text: var(--SmartThemeBodyColor, #f2f0eb);
+    --iig-muted: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f0eb) 62%, var(--SmartThemeEmColor, #9b9b9b) 38%);
+    --iig-danger: #e0645f;
+}
+
 .iig-settings {
     display: flex;
     flex-direction: column;
@@ -20,7 +46,7 @@
 
 .iig-settings .flex-row {
     display: grid;
-    grid-template-columns: minmax(140px, 180px) 1fr auto;
+    grid-template-columns: minmax(96px, 132px) 1fr auto;
     align-items: center;
     column-gap: 10px;
     row-gap: 6px;
@@ -28,17 +54,30 @@
 
 .iig-settings .flex-row > label {
     min-width: 0;
+    font-size: 0.9em;
+    color: var(--iig-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .iig-settings .flex1 {
     flex: 1;
+    width: 100%;
+    min-width: 0;
+}
+
+/* Inline controls fill their column for a cleaner, longer look. */
+.iig-settings .flex-row > select,
+.iig-settings .flex-row > input.text_pole {
+    width: 100%;
     min-width: 0;
 }
 
 .iig-settings hr {
     margin: 10px 0;
     border: none;
-    border-top: 1px solid var(--SmartThemeBorderColor);
+    border-top: 1px solid var(--iig-border);
 }
 
 .iig-settings h4 {
@@ -52,38 +91,80 @@
 
 .iig-settings h4 i {
     font-size: 0.9em;
-    opacity: 0.7;
-    transition: opacity 0.2s ease;
+    color: var(--iig-muted);
+    opacity: 0.85;
+    transition: opacity 0.2s ease, color 0.2s ease;
 }
 
 .iig-settings h4:hover i {
     opacity: 1;
+    color: var(--iig-accent-muted);
 }
 
 .iig-settings .hint {
     font-size: 0.85em;
-    color: var(--SmartThemeQuoteColor);
+    color: var(--iig-muted);
     margin: 0;
     line-height: 1.4;
+}
+
+/* Muted intro line at the top of the panel. */
+.iig-settings-intro {
+    margin: 0 0 4px;
+    font-size: 0.84em;
+    line-height: 1.5;
+    color: var(--iig-muted);
 }
 
 .iig-hidden {
     display: none !important;
 }
 
+/* Checkbox rows: surface card with hover accent + checked accent-wash. */
+.iig-settings .checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 11px;
+    border: 1px solid var(--iig-border);
+    border-radius: 10px;
+    background: var(--iig-surface-strong);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.iig-settings .checkbox_label:hover {
+    border-color: color-mix(in srgb, var(--iig-accent) 40%, var(--iig-border) 60%);
+}
+
+.iig-settings .checkbox_label:has(input:checked) {
+    border-color: color-mix(in srgb, var(--iig-accent) 55%, var(--iig-border) 45%);
+    background: color-mix(in srgb, var(--iig-accent) 12%, var(--iig-surface-strong) 88%);
+}
+
+.iig-settings .checkbox_label input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--iig-accent);
+}
+
 /* ==================== Section Cards ==================== */
 
 .iig-section {
-    background: var(--SmartThemeBlurTintColor);
-    border-radius: 10px;
+    background:
+        linear-gradient(180deg, var(--iig-accent-soft) 0%, transparent 22%),
+        var(--iig-surface);
+    border-radius: 12px;
     padding: 14px;
-    border: 1px solid var(--SmartThemeBorderColor);
+    border: 1px solid var(--iig-border);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
     transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .iig-section:hover {
-    border-color: color-mix(in srgb, var(--SmartThemeBorderColor) 60%, var(--SmartThemeBodyColor) 40%);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    border-color: color-mix(in srgb, var(--iig-accent) 40%, var(--iig-border) 60%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
 .iig-section h4 {
@@ -206,6 +287,45 @@
     font-variant-numeric: tabular-nums;
 }
 
+/* Stop button — below the timer, themed pill (no glyph/font dependency). */
+.iig-loading-placeholder .iig-stop-btn {
+    margin-top: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    font-size: 0.78em;
+    line-height: 1;
+    color: var(--SmartThemeBodyColor);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 70%, transparent);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease, opacity 0.18s ease;
+}
+
+.iig-loading-placeholder .iig-stop-btn svg {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+    opacity: 0.85;
+}
+
+.iig-loading-placeholder .iig-stop-btn:hover:not(:disabled) {
+    background: rgba(232, 93, 117, 0.18);
+    border-color: rgba(232, 93, 117, 0.55);
+    color: var(--SmartThemeBodyColor);
+}
+
+.iig-loading-placeholder .iig-stop-btn:active:not(:disabled) {
+    transform: scale(0.96);
+}
+
+.iig-loading-placeholder .iig-stop-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
 @keyframes iig-spin {
     to { transform: rotate(360deg); }
 }
@@ -240,6 +360,20 @@
 @keyframes iig-error-appear {
     from { opacity: 0; transform: scale(0.95); }
     to { opacity: 1; transform: scale(1); }
+}
+
+/* Retry-only wrapper around an error placeholder. Keep the error image at its
+   proper block size inside the wrapper (avoids the inline 0x0 collapse). */
+.iig-placeholder-wrapper {
+    display: inline-block;
+    max-width: 300px;
+    width: auto;
+}
+
+.iig-placeholder-wrapper .iig-error-image {
+    display: block;
+    width: 100%;
+    margin: 0;
 }
 
 
@@ -279,6 +413,26 @@
 @keyframes iig-image-reveal {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+/* ==================== Generated Video ==================== */
+
+.iig-generated-video {
+    max-width: 100%;
+    border-radius: 12px;
+    margin: 10px 0;
+    display: block;
+}
+
+.iig-image-wrapper .iig-generated-video {
+    margin: 0;
+    border-radius: 0;
+    display: block;
+}
+
+/* Video wrapper allows native controls; keep it block so controls aren't clipped oddly. */
+.iig-video-wrapper {
+    line-height: normal;
 }
 
 /* ==================== Image Action Buttons (Wrapper) ==================== */
@@ -755,36 +909,64 @@
     100% { box-shadow: 0 0 0 0 rgba(232, 93, 117, 0); }
 }
 
-/* ==================== Collapsible Sub-sections ==================== */
+/* ==================== Collapsible Accordion Sections ==================== */
+/* A section card that collapses. Reuses the .iig-section card look; the <h4>
+   header lives inside <summary> and gets a rotating chevron. */
 
-.iig-collapsible-header {
+details.iig-accordion > summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    cursor: pointer;
-    padding: 4px 0;
-    user-select: none;
-    transition: opacity 0.15s ease;
+    gap: 8px;
+    outline: none;
 }
 
-.iig-collapsible-header:hover {
+details.iig-accordion > summary::-webkit-details-marker {
+    display: none;
+}
+
+details.iig-accordion > summary::before {
+    content: '▸';
+    display: inline-block;
+    width: 1em;
+    text-align: center;
+    font-size: 0.85em;
+    opacity: 0.5;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    flex-shrink: 0;
+}
+
+details.iig-accordion[open] > summary::before {
+    transform: rotate(90deg);
     opacity: 0.8;
 }
 
-.iig-collapsible-icon {
-    font-size: 0.75em;
-    transition: transform 0.25s ease;
-    opacity: 0.6;
+details.iig-accordion > summary:hover::before {
+    opacity: 1;
 }
 
-.iig-collapsible-content {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+/* The <h4> inside summary should not add its own top/bottom margin or steal
+   the click target; the summary handles layout. */
+details.iig-accordion > summary > h4 {
+    margin: 0;
+    flex: 1;
 }
 
-.iig-collapsible-content.collapsed {
-    display: none;
+/* Spacing between the header and the body once open. */
+details.iig-accordion[open] > summary {
+    margin-bottom: 10px;
+}
+
+/* Animate the body reveal subtly. */
+details.iig-accordion[open] > :not(summary) {
+    animation: iig-accordion-reveal 0.2s ease-out;
+}
+
+@keyframes iig-accordion-reveal {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* ==================== Export Logs Button ==================== */
@@ -970,4 +1152,230 @@
     background: #4caf50;
     box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
     animation: iig-dot-pulse 2s ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   v2.7.0 additions: Advanced block, API type tooltip icon
+   ─────────────────────────────────────────────────────────────────────── */
+
+.iig-settings .iig-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px;
+    cursor: help;
+    opacity: 0.55;
+    transition: opacity 0.15s ease;
+    font-size: 0.9em;
+}
+
+.iig-settings .iig-info:hover,
+.iig-settings .iig-info:focus {
+    opacity: 1;
+    outline: none;
+}
+
+.iig-settings details.iig-advanced {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--iig-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--iig-surface-strong) 60%, transparent);
+}
+
+.iig-settings details.iig-advanced > summary {
+    cursor: pointer;
+    padding: 3px 0;
+    font-size: 0.92em;
+    opacity: 0.75;
+    list-style: none;
+    user-select: none;
+}
+
+.iig-settings details.iig-advanced > summary::-webkit-details-marker {
+    display: none;
+}
+
+.iig-settings details.iig-advanced > summary::before {
+    content: '▸';
+    display: inline-block;
+    width: 1em;
+    transition: transform 0.15s ease;
+}
+
+.iig-settings details.iig-advanced[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.iig-settings details.iig-advanced > summary:hover {
+    opacity: 1;
+}
+
+.iig-settings details.iig-advanced .iig-advanced-body {
+    padding-top: 8px;
+    border-top: 1px dashed var(--iig-border);
+    margin-top: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   v2.7.2 additions: presets bar, maintenance row, smart-hint toast tweaks
+   ─────────────────────────────────────────────────────────────────────── */
+
+.iig-presets-bar {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.iig-presets-bar select {
+    flex: 1;
+    min-width: 0;
+}
+
+.iig-preset-btn {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    min-width: 32px;
+    text-align: center;
+}
+
+.iig-maintenance-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.iig-maint-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: 0.88em;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border: 1px solid var(--iig-border);
+    border-radius: 999px;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.iig-maint-btn i {
+    flex: 0 0 auto;
+}
+
+.iig-maint-btn:active {
+    transform: scale(0.97);
+}
+
+#iig_manual_save.iig-maint-btn {
+    background: color-mix(in srgb, #3aa564 22%, var(--iig-surface-strong) 78%);
+    border-color: color-mix(in srgb, #3aa564 45%, var(--iig-border) 55%);
+}
+
+#iig_manual_save.iig-maint-btn:hover {
+    background: color-mix(in srgb, #3aa564 32%, var(--iig-surface-strong) 68%);
+}
+
+.iig-maint-danger {
+    background: color-mix(in srgb, var(--iig-danger, #e0645f) 16%, var(--iig-surface-strong) 84%);
+    border-color: color-mix(in srgb, var(--iig-danger, #e0645f) 45%, var(--iig-border) 55%);
+}
+
+.iig-maint-danger:hover {
+    background: color-mix(in srgb, var(--iig-danger, #e0645f) 26%, var(--iig-surface-strong) 74%);
+}
+
+/* Collapse the save-status line while empty so it doesn't leave a gap
+   between the maintenance buttons and the Image Manager launcher. */
+.iig-settings #iig_save_status:empty {
+    display: none;
+}
+
+/* Gentle, consistent finish on the plain action buttons (no semantic bg of
+   their own) — soft-accent hover border to match the other panels. */
+.iig-settings .iig-test-connection,
+.iig-settings .iig-export-logs-btn,
+.iig-settings .iig-open-im-btn,
+.iig-settings .iig-preset-btn {
+    border: 1px solid var(--iig-border);
+    border-radius: 999px;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.iig-settings .iig-test-connection:hover,
+.iig-settings .iig-export-logs-btn:hover,
+.iig-settings .iig-open-im-btn:hover,
+.iig-settings .iig-preset-btn:hover {
+    border-color: color-mix(in srgb, var(--iig-accent) 50%, var(--iig-border) 50%);
+    background: var(--iig-accent-soft);
+}
+
+/* On narrow screens keep both maintenance buttons on one line; the labels
+   shrink/ellipsis instead of stacking. */
+@media (max-width: 480px) {
+    .iig-maintenance-row {
+        gap: 6px;
+    }
+    .iig-maint-btn {
+        padding: 8px 6px;
+        font-size: 0.82em;
+    }
+}
+
+/* ==================== Open Image Manager launcher ==================== */
+
+.iig-open-im-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 7px 8px;
+    font-size: 0.9em;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.iig-open-im-btn:hover {
+    transform: translateY(-1px);
+}
+
+.iig-open-im-btn:active {
+    transform: translateY(0);
+}
+
+/* ==================== Video experimental warning ==================== */
+
+.iig-video-warning {
+    color: #e0a23a !important;
+    background: rgba(224, 162, 58, 0.1);
+    border: 1px solid rgba(224, 162, 58, 0.3);
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin: 4px 0 8px !important;
+}
+
+.iig-video-warning i {
+    margin-right: 4px;
+}
+
+/* ==================== Low-power mode ==================== */
+/* Disable all extension animations. */
+body.iig-low-power [class*="iig-"],
+body.iig-low-power [class*="iig-"]::before,
+body.iig-low-power [class*="iig-"]::after {
+    animation: none !important;
+}
+
+/* System "Reduce Motion" preference. */
+@media (prefers-reduced-motion: reduce) {
+    [class*="iig-"],
+    [class*="iig-"]::before,
+    [class*="iig-"]::after {
+        animation: none !important;
+    }
 }
