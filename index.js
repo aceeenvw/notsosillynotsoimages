@@ -368,8 +368,7 @@ const processingMessages = new Set();
 const recentlyProcessed = new Map();
 const REPROCESS_COOLDOWN_MS = 5000;
 
-// In-flight generations, keyed by "messageId:tagHash". Reclick aborts the prior
-// fetch so only the latest result lands (no stale-overwrite races).
+// In-flight generations are scoped to chat, message, swipe and exact source occurrence.
 const _inFlightGenerations = new Map();
 const _regenBatchTokens = new Map();
 
@@ -511,7 +510,7 @@ function scheduleWrapPass(delay = _wrapPassDelay()) {
     if (_wrapPassTimer) clearIigTimeout(_wrapPassTimer);
     _wrapPassTimer = setIigTimeout(() => {
         _wrapPassTimer = null;
-        _iigGenerating = false; // clear the streaming gate
+        _iigGenerating = false;
         try { wrapExistingImages(); } catch (_) {}
     }, delay);
 }
@@ -1389,7 +1388,7 @@ const IIG_MESSAGES_I18N = {
         unsafeImageUrl: 'Refusing to open an unsafe image URL',
         unsafeDownloadUrl: 'Refusing to download an unsafe URL',
         downloading: 'Downloading...',
-        imageOpened: 'Image opened - long-press to save',
+        imageSaveHint: 'If a new tab opens, long-press the image to save. Otherwise, allow pop-ups and try again.',
         imageDownloaded: 'Image downloaded',
         downloadFailed: 'Download failed: {error}',
         instructionMissing: 'No generation instruction found on this image',
@@ -1496,7 +1495,7 @@ const IIG_MESSAGES_I18N = {
         unsafeImageUrl: 'Небезопасный URL изображения не будет открыт',
         unsafeDownloadUrl: 'Скачивание по небезопасному URL запрещено',
         downloading: 'Скачивание...',
-        imageOpened: 'Изображение открыто - удерживайте его для сохранения',
+        imageSaveHint: 'Если открылась новая вкладка, удерживайте изображение для сохранения. Иначе разрешите всплывающие окна и повторите.',
         imageDownloaded: 'Изображение скачано',
         downloadFailed: 'Не удалось скачать: {error}',
         instructionMissing: 'У этого изображения нет инструкции генерации',
@@ -3282,32 +3281,24 @@ function promptModelResponseShape(raw) {
     return `length=${text.length}, instruction=${text.includes('data-iig-instruction')}, marker=${text.includes('[IMG:GEN]')}, fenced=${text.startsWith('```')}`;
 }
 
-function canonicalizePromptModelInstructionAttributes(source) {
-    return String(source || '').replace(
-        /data-iig-instruction\s*=\s*(["'])([\s\S]*?)\1/gi,
-        (fullMatch, quote, payload) => {
-            try {
-                const instruction = parseInstructionObject(payload);
-                const json = JSON.stringify(instruction);
-                return `data-iig-instruction='${sanitizeForSingleQuotedAttribute(json)}'`;
-            } catch (_) {
-                return fullMatch;
-            }
-        },
-    );
+function canonicalizePromptModelInstructionAttributes(source, forEdit = false) {
+    source = String(source || '');
+    let result = '', end = 0;
+    for (const image of scanImageTagRanges(source)) {
+        const attribute = image.attributes.get('data-iig-instruction');
+        if (!attribute) continue;
+        try {
+            const json = JSON.stringify(parseInstructionObject(attribute.value));
+            const payload = forEdit ? json : sanitizeForSingleQuotedAttribute(json);
+            result += source.slice(end, attribute.start) + `data-iig-instruction='${payload}'`;
+            end = attribute.end;
+        } catch (_) { /* Leave invalid instructions for validation. */ }
+    }
+    return result + source.slice(end);
 }
 
 function formatPromptModelInstructionAttributesForEdit(source) {
-    return String(source || '').replace(
-        /data-iig-instruction\s*=\s*(["'])([\s\S]*?)\1/gi,
-        (fullMatch, quote, payload) => {
-            try {
-                return `data-iig-instruction='${JSON.stringify(parseInstructionObject(payload))}'`;
-            } catch (_) {
-                return fullMatch;
-            }
-        },
-    );
+    return canonicalizePromptModelInstructionAttributes(source, true);
 }
 
 function promptModelSourceHasSidecar(message) {
@@ -3876,44 +3867,25 @@ function promptModelSidecarInnerHtml(wrapper) {
 
 function canonicalizeEditedPromptModelInstructions(source, replacements = null) {
     const text = String(source || '');
-    const attributeStart = /data-iig-instruction\s*=\s*(["'])/gi;
     let output = '';
     let cursor = 0;
-    let match;
-
-    while ((match = attributeStart.exec(text))) {
-        output += text.slice(cursor, match.index);
-        const quote = match[1];
-        const valueStart = match.index + match[0].length;
-        let valueEnd = -1;
-        let instruction = null;
-
-        for (let index = valueStart; index < text.length; index++) {
-            if (text[index] !== quote || text[index - 1] === '\\') continue;
-            try {
-                instruction = JSON.parse(normalizeInstructionPayload(text.slice(valueStart, index)));
-                valueEnd = index;
-                break;
-            } catch (_) {}
-        }
-
-        if (valueEnd < 0) {
-            output += text.slice(match.index);
-            return output;
-        }
-
-        const replacement = `${match[0].slice(0, -1)}'${sanitizeForSingleQuotedAttribute(JSON.stringify(instruction))}'`;
-        output += replacement;
-        cursor = valueEnd + 1;
-        replacements?.push({ end: cursor, delta: replacement.length - (cursor - match.index) });
-        attributeStart.lastIndex = cursor;
+    for (const image of scanImageTagRanges(text, true)) {
+        const attribute = image.attributes.get('data-iig-instruction');
+        if (!attribute?.quote) continue;
+        try {
+            const instruction = JSON.parse(normalizeInstructionPayload(attribute.value));
+            const prefix = text.slice(attribute.start, attribute.valueStart - 1);
+            const replacement = `${prefix}'${sanitizeForSingleQuotedAttribute(JSON.stringify(instruction))}'`;
+            output += text.slice(cursor, attribute.start) + replacement;
+            cursor = attribute.end;
+            replacements?.push({ end: cursor, delta: replacement.length - (cursor - attribute.start) });
+        } catch (_) { /* Leave invalid JSON for sanitization and validation. */ }
     }
 
     return output + text.slice(cursor);
 }
 
-/** Repair edited JSON quoting before HTML parsing; canonicalize sanitized output
- * afterward so the brace scanner receives literal JSON double quotes. */
+/** Sanitize edited sidecars after raw JSON quote repair. */
 function sanitizeSidecarHtml(html) {
     if (typeof globalThis.DOMPurify?.sanitize !== 'function') {
         throw iigError('DOMPurify is unavailable; edited sidecar cannot be safely processed', 'iig_pm_editSanitizerUnavailable');
@@ -6297,11 +6269,7 @@ function parseInstructionObject(payload) {
     }
 }
 
-/**
- * Escape single-quoted instruction attributes, preserving literal JSON double quotes.
- * parseImageTags needs those quotes to distinguish string braces from structure.
- * Do not substitute escapeAttr() unless the scanner becomes entity-aware.
- */
+/** Protect the single-quoted HTML boundary while preserving literal JSON double quotes. */
 function sanitizeForSingleQuotedAttribute(text) {
     return String(text || '')
         .replace(/&/g, '&amp;')
@@ -6322,11 +6290,76 @@ function buildInstructionData(tag) {
     return data;
 }
 
+// Keep source offsets; DOM serialization would rewrite unrelated attributes and text.
+function scanImageTagRanges(source, repairInstructions = false) {
+    const images = [];
+    const starts = /<!--|<\/?([a-z][a-z0-9:-]*)(?=[\t\n\f\r />])/gi;
+    let match;
+    while ((match = starts.exec(source))) {
+        if (match[0] === '<!--') {
+            const end = source.indexOf('-->', starts.lastIndex);
+            starts.lastIndex = end < 0 ? source.length : end + 3;
+            continue;
+        }
+        const name = match[1].toLowerCase();
+        const closing = match[0][1] === '/';
+        const attributes = new Map();
+        let pos = starts.lastIndex;
+        while (pos < source.length) {
+            while (/[\t\n\f\r /]/.test(source[pos] || '') && pos < source.length) pos++;
+            if (source[pos] === '>' || pos === source.length) break;
+            const start = pos;
+            while (pos < source.length && !/[\t\n\f\r />=]/.test(source[pos])) pos++;
+            if (pos === start) { pos++; continue; }
+            const attributeName = source.slice(start, pos).toLowerCase();
+            while (/[\t\n\f\r ]/.test(source[pos] || '') && pos < source.length) pos++;
+            let quote = '', valueStart = pos, valueEnd = pos;
+            if (source[pos] === '=') {
+                pos++;
+                while (/[\t\n\f\r ]/.test(source[pos] || '') && pos < source.length) pos++;
+                if (source[pos] === '"' || source[pos] === "'") quote = source[pos++];
+                valueStart = pos;
+                if (quote) {
+                    let end = source.indexOf(quote, pos);
+                    // The editor exposes raw JSON apostrophes; only its real instruction may cross them.
+                    if (repairInstructions && name === 'img' && attributeName === 'data-iig-instruction') {
+                        for (let candidate = end; candidate >= 0; candidate = source.indexOf(quote, candidate + 1)) {
+                            try {
+                                JSON.parse(normalizeInstructionPayload(source.slice(pos, candidate)));
+                                end = candidate;
+                                break;
+                            } catch (_) {}
+                        }
+                    }
+                    pos = end < 0 ? source.length : end;
+                } else {
+                    while (pos < source.length && !/[\t\n\f\r >]/.test(source[pos])) pos++;
+                }
+                valueEnd = pos;
+                if (quote && pos < source.length) pos++;
+            }
+            // HTML keeps the first duplicate attribute.
+            if (!attributes.has(attributeName)) attributes.set(attributeName,
+                { start, end: pos, valueStart, valueEnd, quote, value: source.slice(valueStart, valueEnd) });
+        }
+        starts.lastIndex = Math.min(pos + 1, source.length);
+        if (source[pos] !== '>') continue;
+        if (!closing && name === 'img') images.push({ start: match.index, end: pos + 1, attributes });
+        if (!closing && /^(script|style|textarea|title|xmp|iframe|noembed|noframes)$/.test(name)) {
+            const end = new RegExp(`</${name}[\\t\\n\\f\\r />]`, 'gi');
+            end.lastIndex = starts.lastIndex;
+            const closingTag = end.exec(source);
+            starts.lastIndex = closingTag ? closingTag.index : source.length;
+        }
+    }
+    return images;
+}
+
 /** Get the data-iig-instruction attribute value from a tag. */
 function getInstructionAttributeValue(tag) {
     if (tag.isNewFormat && tag.fullMatch) {
-        const instructionMatch = tag.fullMatch.match(/data-iig-instruction\s*=\s*(['"])([\s\S]*?)\1/i);
-        if (instructionMatch) return instructionMatch[2];
+        const instruction = scanImageTagRanges(tag.fullMatch)[0]?.attributes.get('data-iig-instruction');
+        if (instruction) return instruction.value;
     }
     return JSON.stringify(buildInstructionData(tag));
 }
@@ -6513,8 +6546,12 @@ function replaceExactTagInMessageSource(message, tag, expectedSource, replacemen
 
 function replaceSrcInTag(tagHtml, newSrc) {
     const source = String(tagHtml || '');
-    const replaced = source.replace(/(\ssrc\s*=\s*)(['"])([\s\S]*?)\2/i,
-        (_match, prefix, quote) => `${prefix}${quote}${newSrc}${quote}`);
+    const image = scanImageTagRanges(source)[0];
+    if (!image || image.start !== 0 || image.end !== source.length) return null;
+    const src = image.attributes.get('src');
+    if (!src || !source.slice(src.start, src.valueStart).includes('=')) return null;
+    const value = src.quote ? newSrc : `"${newSrc}"`;
+    const replaced = source.slice(0, src.valueStart) + value + source.slice(src.valueEnd);
     return replaced === source ? null : replaced;
 }
 
@@ -6893,65 +6930,12 @@ async function parseImageTags(text, options = {}) {
         return tags;
     }
 
-    const imgTagMarker = /\bdata-iig-instruction\s*=\s*/gi;
-    let searchPos = 0;
-
-    while (true) {
-        imgTagMarker.lastIndex = searchPos;
-        const marker = imgTagMarker.exec(text);
-        if (!marker) break;
-        const markerPos = marker.index;
-
-        const imgStart = text.lastIndexOf('<', markerPos);
-        if (imgStart === -1 || !/^<img\b/i.test(text.slice(imgStart, markerPos)) || markerPos - imgStart > 500) {
-            searchPos = markerPos + 1;
-            continue;
-        }
-        
-        const afterMarker = markerPos + marker[0].length;
-        let jsonStart = text.indexOf('{', afterMarker);
-        if (jsonStart === -1 || jsonStart > afterMarker + 10) {
-            searchPos = markerPos + 1;
-            continue;
-        }
-        
-        // Brace-count through the JSON payload, respecting quotes and escapes.
-        let braceCount = 0;
-        let jsonEnd = -1;
-        let inString = false;
-        let escapeNext = false;
-
-        for (let i = jsonStart; i < text.length; i++) {
-            const char = text[i];
-            if (escapeNext) { escapeNext = false; continue; }
-            if (char === '\\' && inString) { escapeNext = true; continue; }
-            if (char === '"') { inString = !inString; continue; }
-            if (!inString) {
-                if (char === '{') braceCount++;
-                else if (char === '}') {
-                    braceCount--;
-                    if (braceCount === 0) { jsonEnd = i + 1; break; }
-                }
-            }
-        }
-
-        if (jsonEnd === -1) {
-            searchPos = markerPos + 1;
-            continue;
-        }
-
-        let imgEnd = text.indexOf('>', jsonEnd);
-        if (imgEnd === -1) {
-            searchPos = markerPos + 1;
-            continue;
-        }
-        imgEnd++;
-        
-        const fullImgTag = text.substring(imgStart, imgEnd);
-        const instructionJson = text.substring(jsonStart, jsonEnd);
-        
-        const srcMatch = fullImgTag.match(/src\s*=\s*["']?([^"'\s>]+)/i);
-        const srcValue = srcMatch ? srcMatch[1] : '';
+    for (const image of scanImageTagRanges(text)) {
+        const instruction = image.attributes.get('data-iig-instruction');
+        if (!instruction) continue;
+        const fullImgTag = text.slice(image.start, image.end);
+        const instructionJson = instruction.value;
+        const srcValue = normalizeInstructionPayload(image.attributes.get('src')?.value || '');
         
         let needsGeneration = false;
         const hasMarker = srcValue.includes('[IMG:');
@@ -6961,7 +6945,6 @@ async function parseImageTags(text, options = {}) {
         // Error images regenerate only on explicit user action (force flag).
         if (hasErrorImage && !forceAll) {
             iigLog('DEBUG:tag', `Skipping error image (use regenerate button): ${srcValue.substring(0, 50)}`);
-            searchPos = imgEnd;
             continue;
         }
         
@@ -6980,12 +6963,10 @@ async function parseImageTags(text, options = {}) {
             }
         } else if (hasPath) {
             iigLog('DEBUG:tag', `Skipping path (no existence check): ${srcValue.substring(0, 50)}`);
-            searchPos = imgEnd;
             continue;
         }
         
         if (!needsGeneration) {
-            searchPos = imgEnd;
             continue;
         }
         
@@ -6994,7 +6975,7 @@ async function parseImageTags(text, options = {}) {
             
             tags.push({
                 fullMatch: fullImgTag,
-                index: imgStart,
+                index: image.start,
                 mediaType: 'image',
                 style: data.style || '',
                 prompt: data.prompt || '',
@@ -7011,10 +6992,9 @@ async function parseImageTags(text, options = {}) {
             iigLog('WARN', `Failed to parse instruction JSON: ${instructionJson.substring(0, 100)}`, e.message);
         }
         
-        searchPos = imgEnd;
     }
 
-    // [IMG:GEN:{...}] form. Same brace-count scanner as above.
+    // Legacy [IMG:GEN:{...}] payloads need balanced JSON braces.
     const marker = '[IMG:GEN:';
     let searchStart = 0;
 
@@ -7085,19 +7065,14 @@ async function parseImageTags(text, options = {}) {
     return tags;
 }
 
-// Resolved-once caches for the install folder and the error.svg path.
 let _cachedAssetBase = null;
-let _cachedErrorImagePath = null;
 
-// Resolve our install-folder base URL (works regardless of folder name).
-// import.meta.url is available because ST loads index.js as a module; falls
-// back to DOM/href sniffing, then a hardcoded candidate.
+// Resolve renamed installs from the module URL, with legacy host fallbacks.
 function getAssetBasePath() {
     if (_cachedAssetBase) return _cachedAssetBase;
 
-    // Preferred: resolve from the loaded module URL.
     try {
-        const here = import.meta.url; // e.g. https://host/scripts/extensions/third-party/<folder>/index.js
+        const here = import.meta.url;
         if (here) {
             const u = new URL(here);
             _cachedAssetBase = u.pathname.substring(0, u.pathname.lastIndexOf('/'));
@@ -7128,70 +7103,7 @@ function getAssetBasePath() {
 }
 
 function getErrorImagePath() {
-    if (_cachedErrorImagePath) return _cachedErrorImagePath;
-
-    // Preferred: use the resolved install-folder base.
-    try {
-        const base = getAssetBasePath();
-        if (base) {
-            _cachedErrorImagePath = `${base}/error.svg`;
-            return _cachedErrorImagePath;
-        }
-    } catch (_) { /* fall through to alternate resolution methods */ }
-
-    const scripts = document.querySelectorAll('script[src*="index.js"]');
-    for (const script of scripts) {
-        const src = script.getAttribute('src') || '';
-        if (src.includes('inline_image_gen') || src.includes('sillyimages') || src.includes('notsosillynotsoimages')) {
-            const basePath = src.substring(0, src.lastIndexOf('/'));
-            _cachedErrorImagePath = `${basePath}/error.svg`;
-            return _cachedErrorImagePath;
-        }
-    }
-
-    const links = document.querySelectorAll('link[rel="stylesheet"][href*="style.css"]');
-    for (const link of links) {
-        const href = link.getAttribute('href') || '';
-        if (href.includes('sillyimages') || href.includes('notsosillynotsoimages') || href.includes('inline_image_gen')) {
-            const basePath = href.substring(0, href.lastIndexOf('/'));
-            _cachedErrorImagePath = `${basePath}/error.svg`;
-            return _cachedErrorImagePath;
-        }
-    }
-
-    const settingsEl = document.querySelector('.iig-settings');
-    if (settingsEl) {
-        const anyImg = document.querySelector('img.iig-error-image[src], img.iig-ref-thumb[src]');
-        if (anyImg?.src) {
-            const basePath = anyImg.src.substring(0, anyImg.src.lastIndexOf('/'));
-            _cachedErrorImagePath = `${basePath}/error.svg`;
-            return _cachedErrorImagePath;
-        }
-    }
-
-    // Covers both default and renamed install folders.
-    const possiblePaths = [
-        '/scripts/extensions/third-party/notsosillynotsoimages/error.svg',
-        '/scripts/extensions/third-party/sillyimages/error.svg',
-    ];
-    _cachedErrorImagePath = possiblePaths[0];
-
-    // Async HEAD to pick the real one; sync callers get the first candidate meanwhile.
-    (async () => {
-        for (const path of possiblePaths) {
-            try {
-                const resp = await fetchWithTimeout(path, { method: 'HEAD' }, 10000);
-                if (resp.ok) {
-                    _cachedErrorImagePath = path;
-                    iigLog('DEBUG:image', `error.svg resolved to: ${path}`);
-                    return;
-                }
-            } catch (e) { /* ignore */ }
-        }
-        iigLog('WARN', 'error.svg not found at any expected path');
-    })();
-
-    return _cachedErrorImagePath;
+    return `${getAssetBasePath()}/error.svg`;
 }
 
 // Inline SVG icons for image action buttons (no external deps).
@@ -7385,25 +7297,28 @@ async function downloadGeneratedImage(imgElement) {
     }
 
     try {
-        toastr.info(sanitizeForHtml(iigT('iig_downloading')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
-
         if (IS_MOBILE) {
-            window.open(src, '_blank');
-            toastr.success(sanitizeForHtml(iigT('iig_imageOpened')), sanitizeForHtml(iigT('iig_title')), { timeOut: 3000, escapeHtml: false });
+            window.open(src, '_blank', 'noopener');
+            toastr.info(sanitizeForHtml(iigT('iig_imageSaveHint')), sanitizeForHtml(iigT('iig_title')), { timeOut: 6000, escapeHtml: false });
             return;
         }
 
+        toastr.info(sanitizeForHtml(iigT('iig_downloading')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
         const response = await fetchWithTimeout(src, {}, 60000);
         if (!response.ok) { response.iigDiscard?.(); throw iigError(`Image request failed (${response.status})`, 'iig_imageRequestFailed', { status: response.status }); }
         const blob = await response.blob();
-        if (blob.type && !blob.type.startsWith('image/')) throw iigError(`Unexpected download type: ${blob.type}`, 'iig_downloadTypeInvalid', { type: blob.type });
+        const type = (blob.type || '').split(';', 1)[0].trim().toLowerCase();
+        if (type && !type.startsWith('image/')) throw iigError(`Unexpected download type: ${blob.type}`, 'iig_downloadTypeInvalid', { type: blob.type });
 
-        const bt = blob.type || '';
-        const ext = bt.includes('png') ? 'png'
-            : bt.includes('webp') ? 'webp'
-            : 'jpg';
+        const ext = new Map([
+            ['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/jpg', 'jpg'],
+            ['image/webp', 'webp'], ['image/gif', 'gif'], ['image/avif', 'avif'],
+            ['image/svg+xml', 'svg'], ['image/bmp', 'bmp'], ['image/x-ms-bmp', 'bmp'],
+            ['image/tiff', 'tiff'], ['image/x-icon', 'ico'], ['image/vnd.microsoft.icon', 'ico'],
+            ['image/apng', 'apng'], ['image/heic', 'heic'], ['image/heif', 'heif'], ['image/jxl', 'jxl'],
+        ]).get(type);
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `iig_${timestamp}.${ext}`;
+        const filename = `iig_${timestamp}${ext ? `.${ext}` : ''}`;
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -7606,9 +7521,9 @@ async function regenerateSingleImage(imgElement, preparedSource = null) {
             return;
         }
 
-        // Superseded by a newer request; silent cancel, no error UI.
+        // Cancellation or lost ownership must not replace the retained image with an error.
         if (isAbort) {
-            iigLog('INFO', 'Single image regeneration aborted (superseded by newer request)');
+            iigLog('INFO', 'Single image regeneration cancelled');
             unregisterPlaceholderTick(loadingPlaceholder);
             return;
         }
@@ -8364,9 +8279,6 @@ const IIG_UI_I18N = {
         endpointUnavailable: 'Endpoint unavailable (HTTP {status})',
         generationEndpointReached: 'Generation endpoint reached without creating an image.',
         probeReturnedStatus: 'Endpoint reached, but the non-generation probe returned HTTP {status}.',
-        connectionModelsFound: 'Connection OK — {count} model(s) found',
-        connectionNoModels: 'Connected, but no models were returned. Enable Advanced → Show all models, or check the endpoint.',
-        unknownApiType: 'Unknown API type: {apiType}',
     },
     ru: {
         title: '⊹ ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЙ В ЧАТЕ ⊹',
@@ -8543,9 +8455,6 @@ const IIG_UI_I18N = {
         endpointUnavailable: 'Адрес API недоступен (HTTP {status})',
         generationEndpointReached: 'Адрес генерации доступен. Изображение не создавалось.',
         probeReturnedStatus: 'Адрес API доступен, но проверка без генерации вернула HTTP {status}.',
-        connectionModelsFound: 'Подключение работает — найдено моделей: {count}',
-        connectionNoModels: 'Подключение установлено, но модели не получены. Включите «Дополнительно → Показывать все модели» или проверьте адрес API.',
-        unknownApiType: 'Неизвестный тип API: {apiType}',
     },
 };
 
@@ -11428,55 +11337,35 @@ function bindSettingsEvents() {
         }
     });
 
-    // Test connection: per-apiType probe with distinct error diagnostics.
+    // Naistera has no remote model catalog; probe its generation endpoint instead.
     bindIig(document.getElementById('iig_test_connection'), 'click', async (e) => {
         const btn = e.currentTarget;
-        if (btn.classList.contains('testing')) return;
+        const s = getSettings();
+        if (s.apiType !== 'naistera' || btn.classList.contains('testing')) return;
         btn.classList.add('testing');
         const icon = btn.querySelector('i');
         const origClass = icon.className;
         icon.className = 'fa-solid fa-spinner';
 
         try {
-            const s = getSettings();
             let flashSuccess = true;
             iigLog('INFO', `Test connection: apiType=${s.apiType}, endpoint=${s.endpoint}, apiKey=${s.apiKey ? 'set' : 'empty'}`);
 
-            switch (s.apiType) {
-                case 'naistera': {
-                    if (!s.apiKey) throw iigError('Set API key first', 'iig_ui_setApiKeyFirst');
-                    const testUrl = getNaisteraGenerationUrl(s);
-                    const resp = await fetchWithTimeout(testUrl, {
-                        method: 'OPTIONS',
-                        headers: { 'Authorization': `Bearer ${s.apiKey}` },
-                    }, 20000);
-                    resp.iigDiscard?.();
-                    if (resp.status === 401 || resp.status === 403) throw iigError(`API key rejected (HTTP ${resp.status})`, 'iig_ui_apiKeyRejected', { status: resp.status });
-                    if (resp.status === 404) throw iigError('Generation endpoint not found (HTTP 404)', 'iig_ui_generationEndpointMissing');
-                    if (resp.status >= 500) throw iigError(`Endpoint unavailable (HTTP ${resp.status})`, 'iig_ui_endpointUnavailable', { status: resp.status });
-                    if (resp.ok) {
-                        toastr.success(sanitizeForHtml(iigT('iig_ui_generationEndpointReached')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
-                    } else {
-                        flashSuccess = false;
-                        toastr.warning(sanitizeForHtml(iigT('iig_ui_probeReturnedStatus', { status: resp.status })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
-                    }
-                    break;
-                }
-                case 'openai':
-                case 'gemini': {
-                    if (!s.endpoint) throw iigError('Set endpoint first', 'iig_ui_setEndpointFirst');
-                    if (!s.apiKey) throw iigError('Set API key first', 'iig_ui_setApiKeyFirst');
-                    const models = await fetchModels();
-                    updateModelCatalog('iig_model', models);
-                    if (models.length > 0) {
-                        toastr.success(sanitizeForHtml(iigT('iig_ui_connectionModelsFound', { count: models.length })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
-                    } else {
-                        toastr.warning(sanitizeForHtml(iigT('iig_ui_connectionNoModels')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
-                    }
-                    break;
-                }
-                default:
-                    throw iigError(`Unknown API type: ${s.apiType}`, 'iig_ui_unknownApiType', { apiType: s.apiType });
+            if (!s.apiKey) throw iigError('Set API key first', 'iig_ui_setApiKeyFirst');
+            const testUrl = getNaisteraGenerationUrl(s);
+            const resp = await fetchWithTimeout(testUrl, {
+                method: 'OPTIONS',
+                headers: { 'Authorization': `Bearer ${s.apiKey}` },
+            }, 20000);
+            resp.iigDiscard?.();
+            if (resp.status === 401 || resp.status === 403) throw iigError(`API key rejected (HTTP ${resp.status})`, 'iig_ui_apiKeyRejected', { status: resp.status });
+            if (resp.status === 404) throw iigError('Generation endpoint not found (HTTP 404)', 'iig_ui_generationEndpointMissing');
+            if (resp.status >= 500) throw iigError(`Endpoint unavailable (HTTP ${resp.status})`, 'iig_ui_endpointUnavailable', { status: resp.status });
+            if (resp.ok) {
+                toastr.success(sanitizeForHtml(iigT('iig_ui_generationEndpointReached')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
+            } else {
+                flashSuccess = false;
+                toastr.warning(sanitizeForHtml(iigT('iig_ui_probeReturnedStatus', { status: resp.status })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
             }
 
             if (flashSuccess) {
@@ -11499,12 +11388,11 @@ function bindSettingsEvents() {
     refreshPromptModelUI();
 }
 
-/** Fullscreen image lightbox. Click image to open; Escape or backdrop to close. */
+/** Desktop image viewer using the host's modal lifecycle. */
 function initLightbox() {
     if (_iigDisposed || IS_MOBILE || _lightboxInitialized) return;
     _lightboxInitialized = true;
 
-    // Desktop only: click a generated image to open lightbox. Mobile uses action buttons instead.
     listenIig(document.getElementById('chat'), 'click', (e) => {
         if (e.target.closest('.iig-action-btn')) return;
 
@@ -11688,7 +11576,7 @@ function cleanupIig() {
                 const content = drawer.querySelector('.inline-drawer-content');
                 const header = drawer.querySelector('.inline-drawer-toggle');
                 if (content && getComputedStyle(content).display === 'none') header?.click();
-                drawer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                drawer.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
                 return true;
             } catch (_) { return false; }
         },
@@ -11806,10 +11694,7 @@ function cleanupIig() {
         });
     }
 
-    // Pause the image-wrap observer's heavy DOM pass while ST streams a reply
-    // (per-token CPU saver), then flush its queue when streaming ends. The gate
-    // only covers streaming text; a guaranteed wrap pass after our own media
-    // generation (scheduleWrapPass) is what restores action buttons live.
+    // Defer heavy wrapping during streaming; media completion schedules its own wrap pass.
     if (context.event_types.GENERATION_STARTED) {
         subscribeIig(context.eventSource, context.event_types.GENERATION_STARTED, async (type, options, dryRun) => {
             if (dryRun) return;
@@ -11872,9 +11757,7 @@ function cleanupIig() {
         }
         schedulePromptModelSidecar(messageId, type);
         await onMessageReceived(messageId);
-        // Our media generation is async; after it lands ST re-renders the
-        // message into a bare <img>. Re-wrap so the action buttons reappear
-        // without needing a page reload.
+        // Restore action buttons after the host re-renders completed media.
         scheduleWrapPass();
     };
 

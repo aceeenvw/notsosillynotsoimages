@@ -1579,10 +1579,6 @@
     margin: 10px 0;
     cursor: zoom-in;
     transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-/* Animate initial image appearance. */
-.iig-generated-image {
     animation: iig-image-reveal 0.5s ease-out;
 }
 
@@ -1617,13 +1613,13 @@
     margin: 10px 0;
     line-height: 0; /* prevent inline spacing under img */
     overflow: hidden; /* prevent action buttons from overflowing on very small images */
-    border-radius: 12px; /* match image radius so overflow clip looks clean */
+    border-radius: 12px;
     contain: layout style;
 }
 
 .iig-image-wrapper .iig-generated-image {
-    margin: 0; /* wrapper handles margin */
-    border-radius: 0; /* wrapper handles border-radius via overflow:hidden */
+    margin: 0;
+    border-radius: 0;
 }
 
 .iig-image-wrapper[hidden] {
@@ -1715,13 +1711,6 @@
     }
 }
 
-.iig-image-wrapper .iig-action-btn:disabled {
-    cursor: wait;
-    opacity: 0.58;
-    transform: scale(0.96);
-    pointer-events: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .iig-action-btn {
         transition: none;
@@ -1732,6 +1721,13 @@
     opacity: 1;
     transform: scale(1);
     pointer-events: auto;
+}
+
+.iig-image-wrapper .iig-action-btn:disabled {
+    cursor: wait;
+    opacity: 0.58;
+    transform: scale(0.96);
+    pointer-events: none;
 }
 
 /* Touch devices: slightly larger targets */
@@ -2544,9 +2540,7 @@ details.iig-accordion[open] > :not(summary) {
     animation: iig-dot-pulse 2s ease-in-out infinite;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────
-   Advanced block and API help
-   ─────────────────────────────────────────────────────────────────────── */
+/* Advanced block and API help */
 
 .iig-settings .iig-api-help > summary {
     cursor: pointer;
@@ -2607,9 +2601,7 @@ details.iig-accordion[open] > :not(summary) {
     margin: 0;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────
-   Presets bar, maintenance row, smart-hint toast tweaks
-   ─────────────────────────────────────────────────────────────────────── */
+/* Presets, maintenance and hints */
 
 .iig-presets-bar {
     display: flex;
@@ -2929,10 +2921,6 @@ details.iig-accordion[open] > :not(summary) {
 @media (max-width: 600px) {
     .iig-api-config-body {
         gap: 12px;
-    }
-
-    .iig-api-fields > .hint {
-        margin-top: -4px;
     }
 
     .iig-api-config-body > .iig-presets-bar,
