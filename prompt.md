@@ -22,6 +22,7 @@ Advanced CSS Interaction Logic:
 Image generation:
 - Each artifact must contain 1 to 5 images.
 - Wrap `data-iig-instruction` in single quotes and use valid double-quoted JSON inside it:
+- After writing valid JSON, HTML-escape `&`, `'`, `<` and `>` inside that attribute as `&amp;`, `&#39;`, `&lt;` and `&gt;`. Keep JSON double quotes unchanged; for example, `"prompt":"Ace&#39;s portrait"`. Do not use `\'` as a JSON escape.
 - Format: `<img data-iig-instruction='{"style":"[STYLE]","prompt":"[DESC]","aspect_ratio":"[RATIO]","image_size":"[SIZE]"}' src="[IMG:GEN]">`
 - [STYLE]: Use a known game engine, animation studio style, cinematic look, or real-world medium.
 - [DESC]: A detailed prompt of 100+ english words describing the image.

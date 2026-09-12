@@ -11,8 +11,7 @@
     margin-bottom: 0 !important;
 }
 
-/* Local token layer (theme-derived) so the settings panel stays consistent and
-   never renders a neon accent. Mapped from the SmartTheme vars. */
+/* Settings colors inherit the host's SmartTheme palette. */
 .iig-settings {
     --iig-surface: color-mix(in srgb, var(--SmartThemeBlurTintColor, rgba(20, 20, 24, 0.96)) 86%, rgba(255, 255, 255, 0.04) 14%);
     --iig-surface-strong: color-mix(in srgb, var(--SmartThemeBlurTintColor, rgba(20, 20, 24, 0.98)) 78%, rgba(255, 255, 255, 0.09) 22%);
@@ -49,7 +48,6 @@
     min-width: 0;
     font-size: 0.9em;
     color: var(--iig-text);
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -325,16 +323,18 @@
     outline: 2px solid var(--SmartThemeQuoteColor);
 }
 
-.iig-pm-prompt-dot {
-    width: 8px;
-    height: 8px;
-    flex: 0 0 8px;
-    border-radius: 50%;
-    background: var(--SmartThemeEmColor);
+.iig-pm-prompt-selection {
+    flex: 0 0 1em;
 }
 
-.iig-pm-prompt-dot.enabled {
-    background: #4caf50;
+.iig-pm-prompt-state {
+    margin-left: auto;
+    font-size: 0.85em;
+}
+
+.iig-pm-prompt-row:focus-visible {
+    outline: 2px solid var(--SmartThemeBodyColor);
+    outline-offset: 3px;
 }
 
 .iig-pm-popup-preview {
@@ -1556,8 +1556,7 @@
     to { opacity: 1; transform: scale(1); }
 }
 
-/* Action wrapper around an error placeholder. Keep the error image at its
-   proper block size inside the wrapper (avoids the inline 0x0 collapse). */
+/* Block sizing prevents an error image from collapsing inside its action wrapper. */
 .iig-placeholder-wrapper {
     display: inline-block;
     max-width: 300px;
@@ -1688,6 +1687,11 @@
 
 .iig-action-download {
     top: 8px;
+    right: 8px;
+}
+
+.iig-action-view {
+    bottom: 8px;
     right: 8px;
 }
 
@@ -2055,7 +2059,7 @@ button.iig-regenerate-btn {
     pointer-events: none;
 }
 
-/* Upload overlay on hover */
+/* Upload overlay is revealed on hover or keyboard focus. */
 .iig-ref-upload-overlay {
     position: absolute;
     inset: 0;
@@ -2069,6 +2073,10 @@ button.iig-regenerate-btn {
     cursor: pointer;
     transition: opacity 0.2s ease;
     border-radius: 12px;
+    border: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
 }
 
 .iig-ref-thumb-wrap > .iig-ref-upload-overlay {
@@ -2155,9 +2163,15 @@ button.iig-regenerate-btn {
 .iig-ref-name:focus-visible,
 .iig-ref-delete-btn:focus-visible,
 .iig-ref-packs-btn:focus-visible,
-.iig-ref-upload-overlay:focus-within {
+.iig-ref-upload-overlay:focus-visible {
     outline: 2px solid var(--iig-accent);
     outline-offset: 2px;
+}
+
+.iig-ref-thumb-wrap > .iig-ref-upload-overlay:focus-visible {
+    opacity: 1;
+    outline-color: #fff;
+    outline-offset: -3px;
 }
 
 .iig-ref-slot:hover .iig-ref-delete-btn,
@@ -2407,50 +2421,48 @@ details.iig-accordion[open] > :not(summary) {
 
 /* ==================== Lightbox ==================== */
 
-.iig-lightbox {
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.25s ease;
+#iig_lightbox {
+    width: fit-content;
+    height: auto;
+    min-height: 0;
+    max-width: 96vw;
+    padding: 8px;
 }
 
-.iig-lightbox.open {
-    pointer-events: auto;
-    opacity: 1;
+#iig_lightbox:not([open]),
+#iig_lightbox [hidden],
+#iig_lightbox .popup-controls {
+    display: none !important;
 }
 
-.iig-lightbox-backdrop {
-    position: absolute;
-    inset: 0;
+#iig_lightbox::backdrop {
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
 }
 
+#iig_lightbox .popup-body {
+    height: auto;
+}
+
+#iig_lightbox .popup-content {
+    margin: 0;
+    padding: 4px;
+    overflow-y: auto;
+}
+
 .iig-lightbox-content {
     position: relative;
     max-width: 90vw;
-    max-height: 90vh;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    transform: scale(0.92);
-    transition: transform 0.3s ease;
-}
-
-.iig-lightbox.open .iig-lightbox-content {
-    transform: scale(1);
 }
 
 .iig-lightbox-img {
     max-width: 90vw;
-    max-height: 82vh;
+    max-height: max(60px, calc(90dvh - 140px));
     border-radius: 10px;
     object-fit: contain;
     box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
@@ -2508,27 +2520,9 @@ details.iig-accordion[open] > :not(summary) {
     -webkit-box-orient: vertical;
 }
 
-.iig-lightbox-close {
-    position: absolute;
-    top: -40px;
-    right: -8px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.8);
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 0.9em;
-    transition: background 0.2s ease, transform 0.15s ease;
-}
-
-.iig-lightbox-close:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: scale(1.1);
+.iig-lightbox-action-btn:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
 }
 
 /* ==================== Header Status Dot ==================== */
@@ -2551,24 +2545,17 @@ details.iig-accordion[open] > :not(summary) {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Advanced block, API type tooltip icon
+   Advanced block and API help
    ─────────────────────────────────────────────────────────────────────── */
 
-.iig-settings .iig-info {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: 6px;
-    cursor: help;
-    opacity: 0.55;
-    transition: opacity 0.15s ease;
+.iig-settings .iig-api-help > summary {
+    cursor: pointer;
     font-size: 0.9em;
 }
 
-.iig-settings .iig-info:hover,
-.iig-settings .iig-info:focus {
-    opacity: 1;
-    outline: none;
+.iig-settings .iig-api-help > summary:focus-visible {
+    outline: 2px solid var(--iig-accent);
+    outline-offset: 2px;
 }
 
 .iig-settings details.iig-advanced {

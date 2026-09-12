@@ -76,6 +76,13 @@ function bindIig(target, type, handler, options) {
     if (!_iigDisposed) target?.addEventListener(type, iigHandler(handler), options);
 }
 
+function preserveNativeButtonActivation(event) {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.closest?.('button:not(.result-control)')) {
+        // The host also synthesizes clicks on Enter; leave native activation intact.
+        event.stopPropagation();
+    }
+}
+
 // Only long-lived targets belong here; local controls are collected with their root.
 function listenIig(target, type, handler, options) {
     if (!target || _iigDisposed) return () => {};
@@ -138,6 +145,7 @@ function readIigBase64(file) {
 
 async function showIigPopup(popup, beforeShow = null, onDispose = null) {
     const ctx = getContext();
+    const removeKeyboardGuard = listenIig(popup.dlg, 'keydown', preserveNativeButtonActivation);
     let shown = false;
     let showing;
     const dispose = () => {
@@ -166,6 +174,7 @@ async function showIigPopup(popup, beforeShow = null, onDispose = null) {
         shown = false;
         throw error;
     } finally {
+        removeKeyboardGuard();
         forget();
         if (!shown) dispose();
     }
@@ -333,11 +342,7 @@ async function fetchIigResponse(url, options, timeoutMs, timeoutMessage) {
     }
 }
 
-/**
- * Promise-based delay that resolves early when `signal` aborts (e.g. user Stop),
- * so retry backoffs don't block cancellation. Removes its abort listener on the
- * normal timeout path, so it is safe to call repeatedly without leaking listeners.
- */
+/** Abort releases the delay early; either exit removes the abort listener. */
 function abortableDelay(ms, signal = null) {
     return new Promise((resolve) => {
         if (_iigDisposed || signal?.aborted) { resolve(); return; }
@@ -535,12 +540,7 @@ function applyLowPowerMode() {
 // Shared placeholder ticker
 // =========================================================================
 //
-// One 1s ticker drives every live placeholder and stops itself when the last
-// one leaves. The period is fixed; each entry carries its own intervalMs,
-// since image placeholders count every second while the prompt-model
-// composing placeholder slows to 5s in low-power mode.
-//
-// _staleCleanupInterval below is a separate singleton, not part of this.
+// One 1s ticker stops when empty; entries can tick less often in low-power mode.
 const _placeholderTicks = new Map();
 let _placeholderTickerId = null;
 
@@ -780,9 +780,8 @@ function exportLogs() {
     toastr.success(sanitizeForHtml(iigT('iig_logsExported')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
 }
 
-// apiType is the single source of truth for request routing — no model-name
-// heuristics, no provider auto-detection. Non-standard providers use the
-// Advanced path override to replace the auto-appended URL suffix.
+// apiType selects the image-provider family; models may select paths within it.
+// Advanced path override replaces the generation URL suffix, not catalog routes.
 const defaultSettings = Object.freeze({
     enabled: true,
     apiType: 'openai',              // 'openai' | 'gemini' | 'naistera'
@@ -974,14 +973,7 @@ const DEFAULT_ENDPOINTS = Object.freeze({
     naistera: 'https://naistera.org',
 });
 
-/**
- * Normalize the user-configured endpoint for a given API type.
- * Strips trailing slashes, strips known auto-appended suffixes
- * (/api/generate, /v1/images/generations, /v1/images/edits,
- * /v1beta/models/...) so users
- * who paste the full documented path still end up with the right base
- * URL. Defaults to naistera.org if empty under apiType='naistera'.
- */
+/** Strip known API suffixes and trailing slashes; supply Naistera's empty-base default. */
 function normalizeConfiguredEndpoint(apiType, endpoint) {
     const trimmed = String(endpoint || '').trim().replace(/\/+$/, '');
     if (!trimmed) {
@@ -1000,9 +992,7 @@ function normalizeConfiguredEndpoint(apiType, endpoint) {
     return trimmed;
 }
 
-// True if the current endpoint clearly belongs to a different API's
-// convention and keeping it would break the newly-selected type. Also fires
-// when switching AWAY from Naistera so a stale naistera.org doesn't leak.
+// Replace recognizable endpoints belonging to the previously selected API family.
 function shouldReplaceEndpointForApiType(apiType, endpoint) {
     const trimmed = String(endpoint || '').trim();
     if (!trimmed) return true;
@@ -1033,8 +1023,7 @@ function getNaisteraGenerationUrl(settings) {
     return endpoint.endsWith('/api/generate') ? endpoint : `${endpoint}/api/generate`;
 }
 
-// One plaintext-endpoint warning per session — a nag on every generation would
-// train users to ignore it.
+// Warn about remote plaintext endpoints once per session.
 let _warnedPlaintextEndpoint = false;
 
 function isLoopbackHostname(hostname) {
@@ -1047,22 +1036,14 @@ function isLoopbackHostname(hostname) {
 }
 
 /**
- * Shape-check a configured endpoint. The API key is attached to every request
- * to this host, so an unparseable or non-HTTP value must not silently become a
- * request.
- *
- * Returns an error string for validateSettings, or null when acceptable.
- *
- * Plain http:// to a NON-loopback host is deliberately NOT an error — it logs
- * one WARN per session and proceeds. Rejecting it outright breaks local
- * proxies and A1111-style setups.
+ * Validate the destination before attaching credentials; return an error or null.
+ * Remote HTTP warns but remains allowed for local proxy setups.
  */
 function validateEndpointShape(endpoint) {
     const raw = String(endpoint || '').trim();
     if (!raw) return 'Endpoint URL not configured';
 
-    // Resolve against the page so a same-origin relative base ("/proxy") stays
-    // valid — same tactic endpointNeedsGoogleHeader already uses.
+    // Resolve relative bases such as "/proxy" against the current page.
     let parsed;
     try {
         parsed = new URL(raw, window.location.href);
@@ -1186,14 +1167,7 @@ function encodeModelForPath(model) {
     return segments.map(encodeURIComponent).join('/');
 }
 
-/**
- * True if a base URL already carries a `/compatible` path segment.
- *
- * Matches on the PATH only. A hostname like `compatible.example.com` or a
- * query string containing the word must not count, or the Gemini probe would
- * skip a provider that actually needs the prefix. Segment-anchored so
- * `/compatibility` does not match either.
- */
+/** Match a whole /compatible path segment, excluding hostnames and query text. */
 function endpointHasCompatiblePrefix(base) {
     let path;
     try {
@@ -1361,7 +1335,7 @@ async function migrateBase64Refs() {
 let _stSaveSettings = null;
 let _stSaveSettingsCaptured = false;
 
-// opts.sync === true: non-debounced write + immediate localStorage flush.
+// opts.sync requests the immediate host hook when available and flushes localStorage.
 // Used by mobile visibilitychange/pagehide and explicit settings mutations.
 // Default: debounced — input-event handlers call this per keystroke.
 function saveSettings(opts) {
@@ -1485,7 +1459,6 @@ const IIG_MESSAGES_I18N = {
         modelMissing: 'Model not selected',
         modelPathInvalid: 'Invalid model id for URL path: {model}',
         novelAiModelInvalid: 'NovelAI requires a full model ID ending in -WIDTHxHEIGHT-sSTEPS',
-        naisteraModelInvalid: 'Select Naistera model: Grok / Grok Pro / Nano Banana 2 / NovelAI',
         unknownApiType: 'Unknown apiType: {apiType}',
         upstreamUnavailable: 'Provider upstream unavailable ({status}). Retry in a minute.',
         imageRequestFailed: 'Image request failed ({status})',
@@ -1593,7 +1566,6 @@ const IIG_MESSAGES_I18N = {
         modelMissing: 'Модель не выбрана',
         modelPathInvalid: 'Недопустимый ID модели для пути URL: {model}',
         novelAiModelInvalid: 'NovelAI требует полный ID модели с окончанием -WIDTHxHEIGHT-sSTEPS',
-        naisteraModelInvalid: 'Выберите модель Naistera: Grok / Grok Pro / Nano Banana 2 / NovelAI',
         unknownApiType: 'Неизвестный тип API: {apiType}',
         upstreamUnavailable: 'Сервер провайдера недоступен ({status}). Повторите через минуту.',
         imageRequestFailed: 'Не удалось запросить изображение ({status})',
@@ -1664,6 +1636,9 @@ const PROMPT_MODEL_I18N = {
         preview: 'Preview',
         sourceMissing: 'source not in this preset',
         importTitle: 'Import image prompt',
+        matchingPrompts: 'Matching prompts',
+        sourceEnabled: 'Enabled in Prompt Manager',
+        sourceDisabled: 'Disabled in Prompt Manager',
         importHint: 'Select a matching preset prompt. Nothing changes until you confirm.',
         noMatches: 'No matching prompts were found in the current preset.',
         importConfirm: 'Import & disable in preset',
@@ -1766,6 +1741,9 @@ const PROMPT_MODEL_I18N = {
         preview: 'Предпросмотр',
         sourceMissing: 'источника нет в этом пресете',
         importTitle: 'Импорт промпта изображения',
+        matchingPrompts: 'Подходящие промпты',
+        sourceEnabled: 'Включён в менеджере промптов',
+        sourceDisabled: 'Выключен в менеджере промптов',
         importHint: 'Выберите промпт из пресета. До подтверждения ничего не изменится.',
         noMatches: 'В текущем пресете нет подходящих промптов.',
         importConfirm: 'Импортировать и отключить в пресете',
@@ -2202,6 +2180,7 @@ function refreshPromptModelUI() {
     const pm = promptModelSettings();
     const gemini = pm.gemini;
     const available = isPromptModelAvailable();
+    const focused = document.activeElement;
     const toggle = document.getElementById('iig_pm_enabled');
     if (toggle) {
         toggle.checked = available && pm.enabled;
@@ -2211,6 +2190,12 @@ function refreshPromptModelUI() {
     unavailable?.classList.toggle('iig-hidden', available);
     const controls = document.getElementById('iig_pm_controls');
     controls?.classList.toggle('iig-pm-disabled', !available);
+    if (controls) {
+        if (!available && (controls.contains(focused) || focused === toggle)) {
+            unavailable?.focus({ preventScroll: true });
+        }
+        controls.inert = !available;
+    }
 
     const connection = document.getElementById('iig_pm_connection');
     if (connection) connection.value = pm.connection;
@@ -2219,7 +2204,7 @@ function refreshPromptModelUI() {
     const endpoint = document.getElementById('iig_pm_gemini_endpoint');
     const apiKey = document.getElementById('iig_pm_gemini_key');
     const model = document.getElementById('iig_pm_gemini_model');
-    if (endpoint) endpoint.value = gemini.endpoint;
+    if (endpoint && document.activeElement !== endpoint) endpoint.value = gemini.endpoint;
     if (apiKey) apiKey.value = gemini.apiKey;
     if (model) model.value = gemini.model;
     refreshPromptModelGeminiPresetSelect();
@@ -2410,6 +2395,7 @@ function initPromptModelGuidanceButton() {
         toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
     });
     bindIig(button, 'click', openGuidance);
+    bindIig(button, 'keydown', preserveNativeButtonActivation);
     sendControls.insertBefore(button, sendButton);
     refreshPromptModelGuidanceButton();
 }
@@ -2424,6 +2410,10 @@ async function openPromptModelImportPopup() {
     const prompts = matchingPromptModelPrompts();
     const root = document.createElement('div');
     root.className = 'iig-pm-popup';
+    const title = document.createElement('h3');
+    title.id = 'iig_pm_import_title';
+    title.textContent = pmT('importTitle');
+    root.appendChild(title);
     const hint = document.createElement('p');
     hint.className = 'iig-pm-popup-hint';
     hint.textContent = prompts.length ? pmT('importHint') : pmT('noMatches');
@@ -2432,13 +2422,19 @@ async function openPromptModelImportPopup() {
     let selectedId = activePromptModelPrompt()?.identifier || prompts[0]?.identifier || '';
     const list = document.createElement('div');
     list.className = 'iig-pm-prompt-list';
+    list.setAttribute('role', 'group');
+    list.setAttribute('aria-label', pmT('matchingPrompts'));
     const preview = document.createElement('textarea');
     preview.className = 'text_pole monospace iig-pm-popup-preview';
     preview.readOnly = true;
+    preview.setAttribute('aria-label', pmT('preview'));
 
     const renderSelection = () => {
         list.querySelectorAll('[data-prompt-id]').forEach(row => {
-            row.classList.toggle('selected', row.dataset.promptId === selectedId);
+            const selected = row.dataset.promptId === selectedId;
+            row.classList.toggle('selected', selected);
+            row.setAttribute('aria-pressed', String(selected));
+            row.querySelector('.iig-pm-prompt-selection').textContent = selected ? '✓' : '';
         });
         preview.value = promptModelPromptById(selectedId)?.content || '';
     };
@@ -2448,12 +2444,16 @@ async function openPromptModelImportPopup() {
         row.type = 'button';
         row.className = 'menu_button iig-pm-prompt-row';
         row.dataset.promptId = prompt.identifier;
-        const dot = document.createElement('span');
-        dot.className = `iig-pm-prompt-dot${promptModelOrderEntry(prompt.identifier)?.enabled ? ' enabled' : ''}`;
+        const selection = document.createElement('span');
+        selection.className = 'iig-pm-prompt-selection';
+        selection.setAttribute('aria-hidden', 'true');
         const name = document.createElement('span');
         name.textContent = prompt.name || prompt.identifier;
-        row.append(dot, name);
-        row.addEventListener('click', () => { selectedId = prompt.identifier; renderSelection(); });
+        const state = document.createElement('span');
+        state.className = 'iig-pm-prompt-state';
+        state.textContent = pmT(promptModelOrderEntry(prompt.identifier)?.enabled ? 'sourceEnabled' : 'sourceDisabled');
+        row.append(selection, name, state);
+        bindIig(row, 'click', () => { selectedId = prompt.identifier; renderSelection(); });
         list.appendChild(row);
     }
     root.append(list, preview);
@@ -2470,13 +2470,14 @@ async function openPromptModelImportPopup() {
     renderSelection();
 
     let imported = false;
-    const popup = new ctx.Popup(root, ctx.POPUP_TYPE.TEXT, pmT('importTitle'), {
+    const popup = new ctx.Popup(root, ctx.POPUP_TYPE.TEXT, '', {
         wide: true,
         large: true,
         allowVerticalScrolling: true,
         okButton: pmT('cancel'),
         cancelButton: false,
     });
+    popup.dlg?.setAttribute('aria-labelledby', title.id);
     bindIig(importButton, 'click', async () => {
         if (importButton.disabled) return;
         importButton.disabled = true;
@@ -4148,9 +4149,7 @@ function initPromptModelEditBridge() {
     });
 }
 
-// Trailing debounce for ref-data persistence. Keystroke events coalesce
-// into one write 500 ms after typing stops, avoiding main-thread stalls
-// from JSON.stringify + 2× localStorage.setItem per keystroke on mobile.
+// Debounce synchronous ref serialization/storage to avoid per-keystroke mobile stalls.
 let _persistRefsTimer = null;
 const PERSIST_REFS_DEBOUNCE_MS = 500;
 
@@ -5668,18 +5667,12 @@ async function generateImageGemini(prompt, style, referenceImages = [], options 
     const model = settings.model;
     const base = getEffectiveEndpoint(settings);
 
-    // Advanced path override wins; otherwise the documented path. The model is
-    // encoded per path segment so a '/' in a provider-prefixed id survives
-    // untouched while '../' traversal throws.
+    // Encode model segments without losing provider prefixes or allowing traversal.
     const modelForPath = encodeModelForPath(model);
     const override = (settings.pathOverride || '').trim();
     const geminiSuffix = `/v1beta/models/${modelForPath}:generateContent`;
 
-    // Some aggregators serve the Gemini route under a /compatible prefix and
-    // 404 the plain path. The prefix is never assumed — it is
-    // learned from a 404 and remembered for the session, so a provider that
-    // does not need it never sees a different request. Preconditions: no path
-    // override, and the base does not already carry the prefix.
+    // Learn /compatible only after a 404; explicit overrides/prefixes bypass probing.
     const canProbeCompatible = !override && !endpointHasCompatiblePrefix(base);
     const quirks = getProviderQuirks(settings);
     const usingCompatible = canProbeCompatible && quirks.geminiPath === 'compatible';
@@ -5943,7 +5936,7 @@ async function generateImageNaistera(prompt, style, options = {}, settings = { .
         else body.reference_objects = referenceObjects;
     }
 
-    // Audit log (Export Logs): fields only, refs counted not dumped.
+    // Export metadata only; count references without logging their contents.
     const bodyAudit = {
         model: body.model,
         aspect_ratio: body.aspect_ratio,
@@ -6305,14 +6298,9 @@ function parseInstructionObject(payload) {
 }
 
 /**
- * Escape for use inside single-quoted HTML attributes (data-iig-instruction).
- *
- * Deliberately does NOT escape `"`. parseImageTags brace-scans the raw text of
- * message.mes and uses a literal `"` to track string state; entity-encoding it
- * makes every brace inside a prompt read as structure, truncating payloads that
- * contain `}` and unterminating those that contain `{`. A `"` cannot close a
- * single-quoted attribute, so omitting it is not an escape hazard. Unifying
- * with escapeAttr() here requires making the scanner entity-aware first.
+ * Escape single-quoted instruction attributes, preserving literal JSON double quotes.
+ * parseImageTags needs those quotes to distinguish string braces from structure.
+ * Do not substitute escapeAttr() unless the scanner becomes entity-aware.
  */
 function sanitizeForSingleQuotedAttribute(text) {
     return String(text || '')
@@ -6631,26 +6619,17 @@ async function commitSingleImageSource(message, snapshot, applyReplacement, save
 // Retry classification — pure, with no settings, DOM or network access.
 // =========================================================================
 
-// Transient per rout.my §16 ("Retry? Yes — 429, 500, 502, 503"). 504 is ours:
-// a gateway timeout in front of any of those is the same condition observed
-// one hop further out.
+// Rate limits and transient server/gateway failures.
 const RETRYABLE_STATUSES = Object.freeze([429, 500, 502, 503, 504]);
 
-// Explicitly terminal. 499 is the one that matters — the client already
-// disconnected, so retrying just burns another multi-minute generation. Listed
-// rather than merely omitted, or a 499 whose body contains the word "network"
-// would retry.
+// Explicit terminal statuses, including client disconnects, override message hints.
 const NON_RETRYABLE_STATUSES = Object.freeze([400, 401, 403, 404, 405, 499]);
 
-// Backoff bounds. The ceiling is rout.my's own figure (§16 caps its worked
-// example at 30s); without it, retryDelay=10000 with maxRetries=5 produces a
-// single 160-second sleep. Jitter is additive-only — shortening the first
-// retry can land back inside the rate-limit window we are backing off from.
+// Cap exponential waits; additive-only jitter preserves the minimum backoff.
 const RETRY_DELAY_CEILING_MS = 30000;
 const RETRY_JITTER_MS = 500;
 
-// The settings input clamps 0..5, but getSettings() does not re-clamp, so a
-// hand-edited settings.json can carry any number into the loop bound.
+// Enforced on input commitment and again when reading persisted retry settings.
 const RETRY_ATTEMPTS_MIN = 0;
 const RETRY_ATTEMPTS_MAX = 5;
 const RETRY_ATTEMPTS_DEFAULT = 2;
@@ -6668,10 +6647,7 @@ function classifyRetryError(error) {
     const isAbort = error?.name === 'AbortError' || msg.includes('aborted');
     const isSafety = !isAbort && error?.iigSafetyBlock === 'image';
 
-    // Recover a status from the message ONLY in the exact shape this file
-    // writes it: `API Error (503): <provider text>` and its two "on <phase>"
-    // variants. Scanning the whole message would let provider-controlled body
-    // text mentioning those digits force a retry on a terminal error.
+    // Read only our API Error prefix; provider body text must not choose retry status.
     let effectiveStatus = status;
     if (effectiveStatus === null) {
         const m = rawMessage.match(/^API Error\b[^(]*\((\d{3})\)/);
@@ -6703,52 +6679,59 @@ function classifyRetryError(error) {
     return { status: effectiveStatus, isAbort, isServerSide, isRetryable, isTimeout, isSafety };
 }
 
-/**
- * Exponential backoff with an absolute ceiling and additive jitter.
- *
- * The cap is applied BEFORE the jitter, so the ceiling is a real ceiling: the
- * largest possible sleep is RETRY_DELAY_CEILING_MS + RETRY_JITTER_MS - 1.
- *
- * `rand` optionally overrides Math.random.
- */
+/** Cap exponential backoff before adding jitter; `rand` permits deterministic checks. */
 function computeRetryDelay(baseDelay, attempt, rand) {
-    const base = Number.isFinite(Number(baseDelay)) && Number(baseDelay) > 0 ? Number(baseDelay) : 1000;
+    const base = clampRetryDelay(baseDelay);
     const step = Number.isFinite(Number(attempt)) && Number(attempt) > 0 ? Math.floor(Number(attempt)) : 0;
     const capped = Math.min(RETRY_DELAY_CEILING_MS, base * Math.pow(2, step));
     const roll = typeof rand === 'function' ? rand() : Math.random();
     return Math.round(capped) + Math.floor(roll * RETRY_JITTER_MS);
 }
 
-/**
- * Clamp a configured maxRetries into the range the UI advertises.
- *
- * Infinity clamps to the maximum rather than falling back to the default —
- * only NaN and non-numeric values are "no usable setting". A user who wrote
- * something unbounded meant "as many as allowed", not "the default".
- */
-function clampRetries(value) {
+function boundedRetryInteger(value, min, max, fallback) {
+    if (!['string', 'number'].includes(typeof value) || String(value).trim() === '') return fallback;
     const n = Number(value);
-    if (Number.isNaN(n)) return RETRY_ATTEMPTS_DEFAULT;
-    if (n === Infinity) return RETRY_ATTEMPTS_MAX;
-    if (n === -Infinity) return RETRY_ATTEMPTS_MIN;
-    return Math.min(RETRY_ATTEMPTS_MAX, Math.max(RETRY_ATTEMPTS_MIN, Math.floor(n)));
+    if (!Number.isFinite(n) || !Number.isInteger(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+}
+
+function clampRetries(value) {
+    return boundedRetryInteger(value, RETRY_ATTEMPTS_MIN, RETRY_ATTEMPTS_MAX, RETRY_ATTEMPTS_DEFAULT);
+}
+
+function clampRetryDelay(value) {
+    return boundedRetryInteger(value, 500, 10000, 1500);
+}
+
+function bindRetryInput(input, settings, field, normalize) {
+    const commit = () => {
+        const previous = normalize(settings[field]);
+        const value = boundedRetryInteger(input.value, Number(input.min), Number(input.max), previous);
+        settings[field] = normalize(value);
+        input.value = String(settings[field]);
+        saveSettings();
+    };
+    bindIig(input, 'change', commit);
+    bindIig(input, 'blur', commit);
+    bindIig(input, 'keydown', event => {
+        if (event.key === 'Enter' && !event.isComposing) commit();
+    });
 }
 
 /**
  * Generate an image with exponential-backoff retry, dispatched by apiType.
- * 5xx always gets >=1 retry regardless of maxRetries; AbortError propagates.
+ * Listed 5xx statuses get at least one retry; AbortError propagates.
  */
 async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {}) {
     validateSettings();
 
     const settings = Object.freeze({ ...getSettings() });
     options = { ...options };
-    // Clamped at READ, not just at the input handler — getSettings() replays
-    // whatever is in settings.json verbatim.
+    // Persisted values can bypass input validation.
     const configuredMax = clampRetries(settings.maxRetries);
     const baseDelay = settings.retryDelay;
 
-    // Prompt-driven=off forces UI defaults; strip per-tag overrides.
+    // Prompt-driven off uses UI size/quality/preset while retaining the tag's aspect ratio.
     if (settings.promptDriven === false) {
         const stripped = Object.keys(options).filter(k => ['imageSize','quality','preset'].includes(k));
         if (stripped.length > 0) {
@@ -7120,7 +7103,7 @@ function getAssetBasePath() {
             _cachedAssetBase = u.pathname.substring(0, u.pathname.lastIndexOf('/'));
             return _cachedAssetBase;
         }
-    } catch (_) { /* not a module context; fall through */ }
+    } catch (_) { /* Try the script URL fallback. */ }
 
     const scripts = document.querySelectorAll('script[src*="index.js"]');
     for (const script of scripts) {
@@ -7245,8 +7228,8 @@ function bindTapImageActions(wrapper) {
 }
 
 /**
- * Wrap <img> with overlay regen/download buttons. Desktop: hover + lightbox;
- * Touch/coarse pointer: tap toggles (4s auto-hide); mobile has no lightbox.
+ * Wrap images with native actions. Desktop supports focus/hover and a modal viewer;
+ * mobile uses tap controls with 4s auto-hide.
  */
 function wrapImageWithActions(imgElement, failedImage = false) {
     if (_iigDisposed) return imgElement;
@@ -7307,31 +7290,86 @@ function wrapImageWithActions(imgElement, failedImage = false) {
         });
     }
 
+    if (!IS_MOBILE && !failedImage && !wrapper.querySelector('.iig-action-view')) {
+        const viewButton = document.createElement('button');
+        viewButton.type = 'button';
+        viewButton.className = 'iig-action-btn iig-action-view';
+        viewButton.innerHTML = '<i class="fa-solid fa-expand" aria-hidden="true"></i>';
+        viewButton.title = iigT('iig_fullSizePreview');
+        viewButton.setAttribute('aria-label', viewButton.title);
+        viewButton.setAttribute('aria-haspopup', 'dialog');
+        wrapper.appendChild(viewButton);
+        bindIig(viewButton, 'click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            return openLightbox(imgElement, viewButton);
+        });
+    }
+    if (failedImage) wrapper.querySelector('.iig-action-view')?.remove();
+
     bindTapImageActions(wrapper);
 
     return wrapper;
 }
 
-/** Open the fullscreen lightbox for the given image element. */
-function openLightbox(imgElement) {
-    const overlay = document.getElementById('iig_lightbox');
-    if (!overlay) return;
-    const lbImg = overlay.querySelector('.iig-lightbox-img');
-    const caption = overlay.querySelector('.iig-lightbox-caption');
-    const regenBtn = overlay.querySelector('.iig-lb-regen');
+let _lightboxPopup = null;
+let _lightboxInitialized = false;
+
+/** Open a host-owned modal viewer for this image. */
+async function openLightbox(imgElement, opener = document.activeElement) {
+    if (_iigDisposed || IS_MOBILE || _lightboxPopup) return;
     const safeSrc = safeMediaUrlOrNull(imgElement.src);
     if (!safeSrc) {
-        iigLog('WARN', `Refusing to open lightbox for unsafe src: ${String(imgElement.src).slice(0, 60)}`);
+        iigLog('WARN', 'Refusing to open lightbox for an unsafe image URL');
         toastr.error(sanitizeForHtml(iigT('iig_unsafeImageUrl')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         return;
     }
-    lbImg.src = safeSrc;
-    caption.textContent = imgElement.alt || '';
-    overlay._sourceImg = imgElement;
-    if (regenBtn) {
-        regenBtn.style.display = imgElement.hasAttribute('data-iig-instruction') ? '' : 'none';
+    const ctx = getContext();
+    const content = document.createElement('div');
+    content.className = 'iig-lightbox-content';
+    content.innerHTML = `
+        <img class="iig-lightbox-img" alt="${sanitizeForHtml(iigT('iig_fullSizePreview'))}">
+        <div class="iig-lightbox-actions">
+            <button type="button" class="iig-lightbox-action-btn iig-lb-download" title="${sanitizeForHtml(iigT('iig_download'))}" aria-label="${sanitizeForHtml(iigT('iig_downloadImage'))}">${SVG_ICON_DOWNLOAD}</button>
+            <button type="button" class="iig-lightbox-action-btn iig-lb-regen" title="${sanitizeForHtml(iigT('iig_regenerate'))}" aria-label="${sanitizeForHtml(iigT('iig_regenerateImage'))}" ${imgElement.hasAttribute('data-iig-instruction') ? '' : 'hidden'}>${SVG_ICON_REGENERATE}</button>
+            <button type="button" class="iig-lightbox-action-btn iig-lightbox-close" autofocus title="${sanitizeForHtml(iigT('iig_close'))}" aria-label="${sanitizeForHtml(iigT('iig_closeViewer'))}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+        <div class="iig-lightbox-caption"></div>`;
+    content.querySelector('.iig-lightbox-img').src = safeSrc;
+    content.querySelector('.iig-lightbox-caption').textContent = imgElement.alt || '';
+    const popup = new ctx.Popup(content, ctx.POPUP_TYPE.TEXT, '', {
+        transparent: true, large: true, okButton: false, cancelButton: false, animation: 'none',
+    });
+    popup.dlg.id = 'iig_lightbox';
+    popup.dlg.classList.add('iig-lightbox');
+    popup.dlg.setAttribute('aria-label', iigT('iig_fullSizePreview'));
+    _lightboxPopup = popup;
+    let regenerate = false;
+    const close = () => {
+        if (!popup.dlg.hasAttribute('closing')) return popup.complete(ctx.POPUP_RESULT.CANCELLED);
+    };
+    bindIig(content.querySelector('.iig-lightbox-close'), 'click', close);
+    bindIig(popup.dlg, 'click', event => {
+        if (event.target === popup.dlg) return close();
+    });
+    bindIig(content.querySelector('.iig-lb-download'), 'click', () => downloadGeneratedImage(imgElement));
+    bindIig(content.querySelector('.iig-lb-regen'), 'click', () => {
+        if (popup.dlg.hasAttribute('closing')) return;
+        regenerate = true;
+        return close();
+    });
+    try {
+        await showIigPopup(popup);
+    } catch {
+        regenerate = false;
+        iigLog('ERROR', 'Image viewer failed');
+    } finally {
+        if (_lightboxPopup === popup) _lightboxPopup = null;
+        if (!_iigDisposed && opener?.isConnected && !opener.disabled && !opener.closest('[hidden], [inert]')) {
+            opener.focus({ preventScroll: true });
+        }
     }
-    overlay.classList.add('open');
+    if (regenerate && !_iigDisposed) return regenerateSingleImage(imgElement);
 }
 
 /** Download a generated image. On mobile, opens in new tab (a.download broken on iOS). */
@@ -7417,7 +7455,7 @@ async function regenerateSingleImage(imgElement, preparedSource = null) {
         return;
     }
 
-    // Keep the original occurrence until its source and replacement have both been saved.
+    // Keep the original visible until upload and the owned source commit finish.
     const prevSrc = imgElement.getAttribute('src') || '';
     const originalInstruction = imgElement.getAttribute('data-iig-instruction');
     const prevIsRealImage = !!prevSrc && !prevSrc.includes('error.svg') && !prevSrc.includes('[IMG:');
@@ -8200,6 +8238,9 @@ const IIG_UI_I18N = {
         perChat: 'Per-chat',
         resetScope: 'Reset scope',
         uploadPhoto: 'Upload photo',
+        uploadCharPhoto: 'Upload character reference photo',
+        uploadUserPhoto: 'Upload user reference photo',
+        uploadNpcPhoto: 'Upload NPC {number} reference photo',
         charAlt: 'Char',
         userAlt: 'User',
         npc: 'NPC',
@@ -8376,6 +8417,9 @@ const IIG_UI_I18N = {
         perChat: 'Для чата',
         resetScope: 'Сбросить набор',
         uploadPhoto: 'Загрузить фото',
+        uploadCharPhoto: 'Загрузить фото-референс персонажа',
+        uploadUserPhoto: 'Загрузить фото-референс пользователя',
+        uploadNpcPhoto: 'Загрузить фото-референс NPC {number}',
         charAlt: 'Персонаж',
         userAlt: 'Пользователь',
         npc: 'НПС',
@@ -8523,10 +8567,10 @@ function createSettingsUI() {
                 <div class="iig-ref-thumb-wrap">
                     <img src="" alt="NPC" data-i18n="[alt]iig_ui_npc" class="iig-ref-thumb">
                     <div class="iig-ref-empty-icon"><i class="fa-solid fa-user-plus"></i></div>
-                    <label class="iig-ref-upload-overlay" title="Upload photo" data-i18n="[title]iig_ui_uploadPhoto">
-                        <i class="fa-solid fa-camera"></i>
-                        <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
-                    </label>
+                    <button type="button" class="iig-ref-upload-overlay" title="Upload photo" data-i18n="[title]iig_ui_uploadPhoto" aria-label="${escapeAttr(iigT('iig_ui_uploadNpcPhoto', { number: i + 1 }))}">
+                        <i class="fa-solid fa-camera" aria-hidden="true"></i>
+                    </button>
+                    <input type="file" accept="image/*" class="iig-ref-file-input" hidden>
                 </div>
                 <div class="iig-ref-info">
                     <div class="iig-ref-label"><span data-i18n="iig_ui_npc">NPC</span> ${i + 1}</div>
@@ -8577,17 +8621,18 @@ function createSettingsUI() {
                         </div>
                         <div class="iig-api-fields">
                         <div class="flex-row iig-api-row">
-                            <label for="iig_api_type"><span data-i18n="iig_ui_apiType">API Type</span>
-                                <span class="iig-info" id="iig_api_type_info" tabindex="0" role="button" aria-label="API type info" data-i18n="[aria-label]iig_ui_apiTypeInfo" title="${escapeAttr(iigT({ openai: 'iig_ui_apiOpenaiHint', gemini: 'iig_ui_apiGeminiHint', naistera: 'iig_ui_apiNaisteraHint' }[settings.apiType] || 'iig_ui_apiOpenaiHint'))}">
-                                    <i class="fa-solid fa-circle-question"></i>
-                                </span>
-                            </label>
-                            <select id="iig_api_type" class="flex1">
+                            <label for="iig_api_type" data-i18n="iig_ui_apiType">API Type</label>
+                            <select id="iig_api_type" class="flex1" aria-describedby="iig_api_type_info">
                                 <option value="openai" data-i18n="iig_ui_openaiCompatible" ${settings.apiType === 'openai' ? 'selected' : ''}>OpenAI-compatible</option>
                                 <option value="gemini" data-i18n="iig_ui_geminiCompatible" ${settings.apiType === 'gemini' ? 'selected' : ''}>Gemini-compatible</option>
                                 <option value="naistera" ${settings.apiType === 'naistera' ? 'selected' : ''}>Naistera</option>
                             </select>
                         </div>
+
+                        <details class="iig-api-help">
+                            <summary data-i18n="iig_ui_apiTypeInfo">API type info</summary>
+                            <p id="iig_api_type_info" class="hint">${sanitizeForHtml(iigT({ openai: 'iig_ui_apiOpenaiHint', gemini: 'iig_ui_apiGeminiHint', naistera: 'iig_ui_apiNaisteraHint' }[settings.apiType] || 'iig_ui_apiOpenaiHint'))}</p>
+                        </details>
 
                         <div class="flex-row iig-api-row" id="iig_endpoint_row">
                             <label for="iig_endpoint" data-i18n="iig_ui_endpoint">Endpoint URL</label>
@@ -8708,10 +8753,10 @@ function createSettingsUI() {
                                     <div class="iig-ref-thumb-wrap">
                                         <img src="" alt="Char" data-i18n="[alt]iig_ui_charAlt" class="iig-ref-thumb">
                                         <div class="iig-ref-empty-icon"><i class="fa-solid fa-user"></i></div>
-                                        <label class="iig-ref-upload-overlay" title="Upload photo" data-i18n="[title]iig_ui_uploadPhoto">
-                                            <i class="fa-solid fa-camera"></i>
-                                            <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
-                                        </label>
+                                        <button type="button" class="iig-ref-upload-overlay" title="Upload photo" aria-label="Upload character reference photo" data-i18n="[title]iig_ui_uploadPhoto;[aria-label]iig_ui_uploadCharPhoto">
+                                            <i class="fa-solid fa-camera" aria-hidden="true"></i>
+                                        </button>
+                                        <input type="file" accept="image/*" class="iig-ref-file-input" hidden>
                                     </div>
                                     <div class="iig-ref-info">
                                          <div class="iig-ref-label">{{char}}</div>
@@ -8728,10 +8773,10 @@ function createSettingsUI() {
                                     <div class="iig-ref-thumb-wrap">
                                         <img src="" alt="User" data-i18n="[alt]iig_ui_userAlt" class="iig-ref-thumb">
                                         <div class="iig-ref-empty-icon"><i class="fa-solid fa-user"></i></div>
-                                        <label class="iig-ref-upload-overlay" title="Upload photo" data-i18n="[title]iig_ui_uploadPhoto">
-                                            <i class="fa-solid fa-camera"></i>
-                                            <input type="file" accept="image/*" class="iig-ref-file-input" style="display:none">
-                                        </label>
+                                        <button type="button" class="iig-ref-upload-overlay" title="Upload photo" aria-label="Upload user reference photo" data-i18n="[title]iig_ui_uploadPhoto;[aria-label]iig_ui_uploadUserPhoto">
+                                            <i class="fa-solid fa-camera" aria-hidden="true"></i>
+                                        </button>
+                                        <input type="file" accept="image/*" class="iig-ref-file-input" hidden>
                                     </div>
                                     <div class="iig-ref-info">
                                          <div class="iig-ref-label">{{user}}</div>
@@ -8759,9 +8804,9 @@ function createSettingsUI() {
                             <span>${sanitizeForHtml(pmT('enabled'))}</span>
                         </label>
                         <p class="hint">${sanitizeForHtml(pmT('offHint'))}</p>
-                        <p id="iig_pm_unavailable" class="hint iig-pm-warning ${isPromptModelAvailable() ? 'iig-hidden' : ''}">${sanitizeForHtml(pmT('notChatCompletion'))}</p>
+                        <p id="iig_pm_unavailable" tabindex="-1" class="hint iig-pm-warning ${isPromptModelAvailable() ? 'iig-hidden' : ''}">${sanitizeForHtml(pmT('notChatCompletion'))}</p>
 
-                        <div id="iig_pm_controls" class="iig-pm-controls ${isPromptModelAvailable() ? '' : 'iig-pm-disabled'}">
+                        <div id="iig_pm_controls" ${isPromptModelAvailable() ? '' : 'inert'} class="iig-pm-controls ${isPromptModelAvailable() ? '' : 'iig-pm-disabled'}">
                             <div class="flex-row iig-pm-row">
                                 <label for="iig_pm_connection">${sanitizeForHtml(pmT('connection'))}</label>
                                 <select id="iig_pm_connection" class="flex1">
@@ -8851,7 +8896,7 @@ function createSettingsUI() {
                             <p id="iig_pm_snapshot_status" class="hint iig-pm-snapshot"></p>
                             <details class="iig-pm-preview-details">
                                 <summary>${sanitizeForHtml(pmT('preview'))}</summary>
-                                <textarea id="iig_pm_preview" class="text_pole monospace iig-pm-preview" readonly>${sanitizeForHtml(pm.snapshot.content || '')}</textarea>
+                                <textarea id="iig_pm_preview" class="text_pole monospace iig-pm-preview" aria-label="${sanitizeForHtml(pmT('preview'))}" readonly>${sanitizeForHtml(pm.snapshot.content || '')}</textarea>
                             </details>
                         </div>
                     </details>
@@ -8930,13 +8975,13 @@ function createSettingsUI() {
                         <div class="flex-row">
                             <label for="iig_max_retries" data-i18n="iig_ui_maxRetries">Max Retries</label>
                             <input type="number" id="iig_max_retries" class="text_pole flex1" 
-                                   value="${sanitizeForHtml(settings.maxRetries)}" min="0" max="5">
+                                   value="${clampRetries(settings.maxRetries)}" min="0" max="5" step="1">
                         </div>
                         
                         <div class="flex-row">
                             <label for="iig_retry_delay" data-i18n="iig_ui_retryDelay">Delay (ms)</label>
                             <input type="number" id="iig_retry_delay" class="text_pole flex1" 
-                                   value="${sanitizeForHtml(settings.retryDelay)}" min="500" max="10000" step="500">
+                                   value="${clampRetryDelay(settings.retryDelay)}" min="500" max="10000" step="1">
                         </div>
                         <p class="hint" data-i18n="iig_ui_retryHint">Retries temporary API errors with increasing delays, capped at 30 seconds.</p>
                     </details>
@@ -9007,8 +9052,7 @@ function createSettingsUI() {
 // Image Packs — local reference library
 // =========================================================================
 //
-// Thumbnails are written once at import, so the grid never decodes a
-// full-size blob; only the chosen image is read in full.
+// The grid displays stored thumbnails; upgrading older thumbnails decodes originals.
 
 const PACKS_DB_NAME = `iig-packs-${_BUILD_HASH.seed}`;
 const PACKS_DB_VERSION = 2;
@@ -9291,7 +9335,7 @@ async function measurePacksStorage() {
     });
 }
 
-/** Read only when an image is chosen; the grid uses thumbnails. */
+/** Read the chosen image for use; the grid displays stored thumbnails. */
 async function getPackAssetBlob(assetId) {
     const record = await packsTransaction([ASSETS_STORE], 'readonly', tx =>
         packsRequest(tx.objectStore(ASSETS_STORE).get(assetId)));
@@ -10526,7 +10570,6 @@ function bindRefSlotEvents() {
         });
 
         // Rename-on-blur: download and re-upload under the matching slug.
-        // Skipped if filename already matches iig_ref_<refType>_<slug>(_N)?.jpeg.
         // Failures are silent (log-only); the old file keeps working.
         let _renameInProgress = false;
         bindIig(nameInput, 'blur', async () => {
@@ -10601,6 +10644,9 @@ function bindRefSlotEvents() {
         });
 
         const fileInput = slot.querySelector('.iig-ref-file-input');
+        bindIig(slot.querySelector('.iig-ref-upload-overlay'), 'click', () => {
+            if (!_refFolderClearInProgress) fileInput?.click();
+        });
         const fileHandler = async (e) => {
             const file = e.target.files?.[0];
             if (!file || _refFolderClearInProgress) return;
@@ -10714,6 +10760,7 @@ function runSlashCommand(text) {
 /** Wire up all settings-panel event handlers and visibility toggles. */
 function bindSettingsEvents() {
     const settings = getSettings();
+    bindIig(document.querySelector('.iig-settings'), 'keydown', preserveNativeButtonActivation);
 
     const updateVisibility = () => {
         const apiType = settings.apiType;
@@ -10758,8 +10805,8 @@ function bindSettingsEvents() {
         const infoEl = document.getElementById('iig_api_type_info');
         if (infoEl) {
             const hintKey = { openai: 'iig_ui_apiOpenaiHint', gemini: 'iig_ui_apiGeminiHint', naistera: 'iig_ui_apiNaisteraHint' }[apiType];
-            infoEl.dataset.i18n = `[aria-label]iig_ui_apiTypeInfo${hintKey ? `;[title]${hintKey}` : ''}`;
-            infoEl.setAttribute('title', hintKey ? iigT(hintKey) : '');
+            infoEl.dataset.i18n = hintKey || '';
+            infoEl.textContent = hintKey ? iigT(hintKey) : '';
         }
 
         document.getElementById('iig_refs_section')?.classList.remove('iig-hidden');
@@ -11022,19 +11069,24 @@ function bindSettingsEvents() {
     });
     
     bindIig(document.getElementById('iig_endpoint'), 'input', (e) => {
-        settings.endpoint = normalizeConfiguredEndpoint(settings.apiType, e.target.value);
+        settings.endpoint = e.target.value;
         invalidateImageModelCatalog();
-        // Fires per keystroke; Map.clear() on an empty map is a no-op and
-        // clearProviderQuirks returns early, so this is free while typing.
         clearProviderQuirks('endpoint changed');
-        // Debounced reflect of the normalized value (avoids cursor jumping).
-        clearIigTimeout(e.target._normalizeTimer);
-        e.target._normalizeTimer = setIigTimeout(() => {
-            if (e.target.value !== settings.endpoint) {
-                e.target.value = settings.endpoint;
-            }
-        }, 1500);
         saveSettings();
+    });
+    const commitEndpoint = (event) => {
+        const value = normalizeConfiguredEndpoint(settings.apiType, event.target.value);
+        event.target.value = value;
+        if (settings.endpoint === value) return;
+        settings.endpoint = value;
+        invalidateImageModelCatalog();
+        clearProviderQuirks('endpoint committed');
+        saveSettings();
+    };
+    bindIig(document.getElementById('iig_endpoint'), 'change', commitEndpoint);
+    bindIig(document.getElementById('iig_endpoint'), 'blur', commitEndpoint);
+    bindIig(document.getElementById('iig_endpoint'), 'keydown', event => {
+        if (event.key === 'Enter' && !event.isComposing) commitEndpoint(event);
     });
     
     bindIig(document.getElementById('iig_api_key'), 'input', (e) => {
@@ -11266,17 +11318,8 @@ function bindSettingsEvents() {
         toastr.info(sanitizeForHtml(iigT('iig_ui_presetDeleted', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
     });
     
-    bindIig(document.getElementById('iig_max_retries'), 'input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        settings.maxRetries = Number.isNaN(val) ? 0 : Math.max(0, Math.min(5, val));
-        saveSettings();
-    });
-    
-    bindIig(document.getElementById('iig_retry_delay'), 'input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        settings.retryDelay = Number.isNaN(val) ? 1000 : Math.max(500, val);
-        saveSettings();
-    });
+    bindRetryInput(document.getElementById('iig_max_retries'), settings, 'maxRetries', clampRetries);
+    bindRetryInput(document.getElementById('iig_retry_delay'), settings, 'retryDelay', clampRetryDelay);
     
     bindIig(document.getElementById('iig_verbose_logging'), 'change', (e) => {
         settings.verboseLogging = e.target.checked;
@@ -11458,46 +11501,8 @@ function bindSettingsEvents() {
 
 /** Fullscreen image lightbox. Click image to open; Escape or backdrop to close. */
 function initLightbox() {
-    if (_iigDisposed || IS_MOBILE || document.getElementById('iig_lightbox')) return;
-
-    const overlay = document.createElement('div');
-    overlay.id = 'iig_lightbox';
-    overlay.className = 'iig-lightbox';
-    overlay.innerHTML = `
-        <div class="iig-lightbox-backdrop"></div>
-        <div class="iig-lightbox-content">
-            <img class="iig-lightbox-img" src="" alt="${sanitizeForHtml(iigT('iig_fullSizePreview'))}">
-            <div class="iig-lightbox-actions">
-                <button type="button" class="iig-lightbox-action-btn iig-lb-download" title="${sanitizeForHtml(iigT('iig_download'))}" aria-label="${sanitizeForHtml(iigT('iig_downloadImage'))}">${SVG_ICON_DOWNLOAD}</button>
-                <button type="button" class="iig-lightbox-action-btn iig-lb-regen" title="${sanitizeForHtml(iigT('iig_regenerate'))}" aria-label="${sanitizeForHtml(iigT('iig_regenerateImage'))}">${SVG_ICON_REGENERATE}</button>
-            </div>
-            <div class="iig-lightbox-caption"></div>
-            <button type="button" class="iig-lightbox-close" title="${sanitizeForHtml(iigT('iig_close'))}" aria-label="${sanitizeForHtml(iigT('iig_closeViewer'))}"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-
-    overlay._sourceImg = null;
-
-    const close = () => { overlay.classList.remove('open'); overlay._sourceImg = null; };
-    overlay.querySelector('.iig-lightbox-backdrop').addEventListener('click', close);
-    overlay.querySelector('.iig-lightbox-close').addEventListener('click', close);
-
-    bindIig(overlay.querySelector('.iig-lb-download'), 'click', (e) => {
-        e.stopPropagation();
-        if (overlay._sourceImg) return downloadGeneratedImage(overlay._sourceImg);
-    });
-    bindIig(overlay.querySelector('.iig-lb-regen'), 'click', (e) => {
-        e.stopPropagation();
-        if (overlay._sourceImg) {
-            const image = overlay._sourceImg;
-            close();
-            return regenerateSingleImage(image);
-        }
-    });
-    listenIig(document, 'keydown', (e) => {
-        if (e.key === 'Escape' && overlay.classList.contains('open')) close();
-    });
+    if (_iigDisposed || IS_MOBILE || _lightboxInitialized) return;
+    _lightboxInitialized = true;
 
     // Desktop only: click a generated image to open lightbox. Mobile uses action buttons instead.
     listenIig(document.getElementById('chat'), 'click', (e) => {
@@ -11508,7 +11513,7 @@ function initLightbox() {
 
         e.preventDefault();
         e.stopPropagation();
-        openLightbox(img);
+        return openLightbox(img, img.parentElement?.querySelector('.iig-action-view') || document.activeElement);
     });
 
     iigLog('DEBUG:init', 'Lightbox initialized');
@@ -11725,6 +11730,11 @@ function cleanupIig() {
         initImageWrapObserver();
         initPromptModelEditBridge();
         initPromptModelGuidanceButton();
+        listenIig(document.getElementById('chat'), 'keydown', event => {
+            if (event.target.closest('.iig-action-btn, .iig-regenerate-btn, .iig-pm-retry, .iig-pm-stop')) {
+                preserveNativeButtonActivation(event);
+            }
+        });
         listenIig(document.getElementById('chat'), 'click', event => {
             const reroll = event.target.closest('[data-iig-pm-reroll="1"]');
             if (reroll) {

@@ -102,6 +102,11 @@ prompt to the narrative sent to your main model.
 4. Click **Import prompt…**, select a preset prompt beginning with `<image_gen>`, then confirm.
 5. Enable **Use separate prompt model**.
 
+To adapt [`prompt.md`](prompt.md), replace its `[HTML CSS]` opening with
+`<image_gen>` and ask for **only the HTML artifact based on the supplied completed
+narrative**, rather than an artifact embedded in a new narrative response.
+Keep its image-tag requirements.
+
 Importing stores one frozen snapshot and disables its Prompt Manager entry.
 Turning Prompt Model off re-enables that prompt and restores the inline workflow;
 turning it back on refreshes the snapshot if the source was edited meanwhile.
@@ -147,6 +152,10 @@ The AI writes image requests using this HTML tag:
 
 After generation, `src` is rewritten to the saved file path.
 A legacy `[IMG:GEN:{json}]` format is also accepted.
+
+Write valid JSON first, then HTML-escape `&`, `'`, `<` and `>` as `&amp;`,
+`&#39;`, `&lt;` and `&gt;` inside the single-quoted attribute. Keep JSON double
+quotes unchanged: for example, `"prompt":"Ace&#39;s portrait"`.
 
 ### ⊹ Image fields
 
@@ -311,7 +320,7 @@ Name field:  Ace, Acey
 "a quiet space"       → no match (whole-word)
 ```
 
-The first alias names the file on the server.
+The first alias supplies the filename slug on the server.
 
 ### ⊹ 4-image limit
 
@@ -323,12 +332,15 @@ The extension sends at most 4 refs/request. Priority: **char → user → NPCs**
 Type a name and click away → the server file is renamed to match:
 
 ```
-iig_ref_char_ace.jpeg
-iig_ref_user_savannah.jpeg
-iig_ref_npc0_elias.jpeg
+iig_ref_char_ace_u<unique-id>.jpeg
+iig_ref_user_savannah_u<unique-id>.jpeg
+iig_ref_npc_elias_u<unique-id>.jpeg
 ```
 
-Collisions get numeric suffixes (`_2`, `_3`, …). Clearing or replacing a slot
+Slugs use lowercase ASCII letters, digits, `_` and `-`, up to 40 characters.
+Other characters become underscores; names are not transliterated. Named NPCs
+use `npc`; unnamed NPC files use their slot prefix (for example, `npc0`).
+New filenames have a random unique suffix. Clearing or replacing a slot
 retains its old server file because an unloaded chat may still reference it.
 Use **Check ref storage** for an on-demand file count and measured size, then
 **Clear refs folder** when you intentionally want to remove every stored ref.
@@ -413,7 +425,7 @@ for non-standard providers:
 ## ✦ Image controls
 
 **On any generated image**
-- Desktop: hover for download and regenerate buttons; click for a lightbox.
+- Desktop: hover or Tab to image controls; click the image or use **Full-size preview** for a lightbox. Escape closes it.
 - Mobile: tap once to show the buttons; they hide after 4 seconds. No lightbox.
 
 | Action | Scope |
@@ -438,8 +450,8 @@ regenerates only that image. The same recent-context requirement applies.
 
 **In the message menu** — a stacked-images icon regenerates **all** images at once.
 
-**Rapid re-clicks** — clicking regenerate twice aborts the in-flight request; only
-the newest result lands. No stale overwrites.
+**Rapid re-clicks** — ordinary regenerate ignores duplicate activation while it
+is running. Use **Stop**, then retry to start again.
 
 ### ⊹ Completion sounds
 
@@ -460,10 +472,10 @@ Manager** appears at the bottom of the settings panel.
 
 - **Smart hints** — errors carry a concrete recovery action. The same suggestion
   does not repeat within 30 seconds.
-- **Refresh models** distinguishes a valid empty catalog from request failure.
-- **Test Connection** distinguishes *no endpoint / no key / unreachable / auth
-  rejected / path not found / model list empty*. Naistera checks its generation
-  route without creating an image.
+- **Refresh models** checks the image model catalog for OpenAI/Gemini-compatible
+  connections and distinguishes an empty catalog from request failure.
+- **Test Connection** is available for Naistera and checks its generation route
+  without creating an image.
 - **Export Logs** records redacted request metadata and diagnostics.
 
 ---
@@ -472,8 +484,8 @@ Manager** appears at the bottom of the settings panel.
 
 | Setting | Default | Notes |
 |---|:---:|---|
-| Max Retries | `2` | `0` disables retries, except one forced attempt on a 5xx. |
-| Delay | `1500 ms` | Doubles per attempt, capped at 30s, plus 0–500ms jitter. |
+| Max Retries | `2` | Integer `0–5`; `0` disables retries except one on HTTP 500/502/503/504. |
+| Delay | `1500 ms` | Integer `500–10000 ms`; doubles per attempt, capped at 30s, plus up to 500ms jitter. |
 
 Retried automatically: **429**, **5xx**, transport **timeouts**, and image-level
 **safety blocks**. Timeouts get one retry at most; safety blocks two.
@@ -508,7 +520,7 @@ significant memory and battery.
 
 | Symptom | Fix |
 |---|---|
-| No images generating | Header dot green? Verify API Type, endpoint & key, then run **Test Connection**. |
+| No images generating | Header dot green? Verify API Type, endpoint & key; use **Refresh models** for OpenAI/Gemini or **Test Connection** for Naistera. |
 | "No models found" but you know they exist | Expand **Advanced** → enable **Show all models**. |
 | Generation returns 404 | Verify the API Type, model ID, and documented endpoint base. Gemini automatically tests `/compatible`. |
 | GPT Image says the model is not a language model | Select **OpenAI-compatible** and use the provider base without `/compatible`. |
