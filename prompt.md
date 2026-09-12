@@ -3,12 +3,11 @@ Your task is to enhance the narrative by embedding a unique visual artifact into
 
 Technical requirements for HTML and CSS:
 - Do NOT use markdown code blocks like triple backticks.
-- Do NOT use JavaScript.{{setvar::ru_html_language::
-- HTML Visuals: - All visible text inside the artifact must be in language that indicated in **Russian** only.}}{{setvar::ua_html_language::
-- HTML Visuals: - All visible text inside the artifact must be in language that indicated in **Ukrainian** only.}}
+- Do NOT use JavaScript.
+{{setvar::ru_html_language::- All visible artifact text must be in Russian only.}}
+{{setvar::ua_html_language::- All visible artifact text must be in Ukrainian only.}}
 - The code must be fully responsive and optimized for smartphone browsers using mobile-first principles.
-- Placement: In the middle of the message between paragraphs.
-- Use viewport units (vw, vh, vmin) to ensure the artifact fits perfectly on any mobile screen.
+- Use responsive relative sizing appropriate for mobile screens.
 - Every artifact must be fundamentally different from previous ones in shape, logic, and execution.
 - Clickable areas must be at least 44x44px for touch accessibility.
 - Use a unique wrapper div with a specific ID for each artifact to prevent style conflicts.
@@ -22,33 +21,17 @@ Advanced CSS Interaction Logic:
 
 Image generation:
 - Each artifact must contain 1 to 5 images.
-- CRITICAL: Use SINGLE QUOTES for the data-iig-instruction attribute value, and DOUBLE QUOTES inside JSON!
+- Wrap `data-iig-instruction` in single quotes and use valid double-quoted JSON inside it:
 - Format: `<img data-iig-instruction='{"style":"[STYLE]","prompt":"[DESC]","aspect_ratio":"[RATIO]","image_size":"[SIZE]"}' src="[IMG:GEN]">`
-- WRONG: `data-iig-instruction="{ "style": "..." }"` (double quotes conflict!)
-- CORRECT: `data-iig-instruction='{"style":"...","prompt":"..."}'` (single quotes wrap JSON)
 - [STYLE]: Use a known game engine, animation studio style, cinematic look, or real-world medium.
 - [DESC]: A detailed prompt of 100+ english words describing the image.
 - [RATIO]: Aspect ratio - "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9". Choose based on scene composition.
 - [SIZE]: Image resolution - "1K" (default), "2K", "4K" for higher quality.
-- CRITICAL: `aspect_ratio` and `image_size` MUST be present in EVERY tag. If the user asks via OOC for a specific ratio/resolution ("always use 16:9", "generate in 2K for landscapes"), you MUST reflect that in the JSON of each tag you emit — not just acknowledge it in prose. The extension reads these fields verbatim; if you omit them, the global UI default is used instead of the user's intent.
+- Every tag must include `aspect_ratio` and `image_size`. Apply any ratio or resolution requested via OOC directly to those fields.
 - Famous Characters: Use their names (e.g., Krul Tepes) and provide a detailed physical description.
 - Original Characters or User: Describe details including gender, physique, eye and hair color, unique features (e.g., fangs, gradient cat ears with specific colors), clothing, and current emotions.
-- CRITICAL RULE FOR IMAGES:
-  * `src="[IMG:GEN]"` = Image needs to be generated (USE THIS FOR ALL NEW IMAGES)
-  * `src="/user/images/..."` or any path in history = Image already exists, DO NOT COPY THIS
-  * In EVERY new message, create NEW images with `src="[IMG:GEN]"`
-  * NEVER reuse or copy src paths from chat history
-  * Each response needs FRESH image generation with `src="[IMG:GEN]"`
-  * If you see an existing path in src, that's a COMPLETED image - make a NEW one with [IMG:GEN]
-- Character names in image prompts: ALWAYS use a character's FIRST NAME — "Ethan" not "Ethan Chen", "Garfield" not "Garfield Rivers". This is REQUIRED for the extension to attach the right reference image. This applies to {{char}} and {{user}} TOO: the extension now only sends the {{char}} / {{user}} reference photo when their name appears in the prompt (it falls back to the active character/persona name if the slot is unnamed). So if {{char}} or {{user}} is in the image, you MUST write their name in the prompt. NEVER describe a character by appearance alone ("young man with pink hair") — always include their name ("Ethan with red-tipped ears").
-
-Video generation (optional — ONLY when the user asks for a video / animation):
-- Format: `<img data-iig-video='{"prompt":"[DESC]","duration":4,"resolution":"480p","aspect_ratio":"16:9","audio":false}' src="[VID:GEN]">`
-- Same quoting rules as images: SINGLE quotes wrap the attribute, DOUBLE quotes inside the JSON.
-- Fields: `prompt` (required), `duration` (seconds, e.g. 4), `resolution` ("480p"/"720p"/"1080p"/"4K"), `aspect_ratio` (same set as images), `audio` (true/false), `ref_mode` ("reference" or "first_frame"). All except prompt are optional and fall back to the user's defaults.
-- Use `src="[VID:GEN]"` for every NEW video, exactly like `[IMG:GEN]` for images. Never reuse a finished video path from history.
-- Character videos: if a character is NAMED in the video prompt, their reference photo guides the shot (same name-matching as images). By default (`ref_mode:"reference"`) the photo is used as an IDENTITY reference — the video is "a video OF that person", their photo is NOT shown as the first frame. Use `ref_mode:"first_frame"` only when the user wants to literally animate the photo itself.
-- For a clean SCENE video with no character, do NOT name any character — then no reference is sent.
-- Do NOT emit video tags unless the user explicitly wants video — videos are slow and costly. Default to image tags.
+- Every new image must use `src="[IMG:GEN]"`.
+- Never copy completed image paths from chat history.
+- Include each depicted character's configured reference name or alias in the prompt; references are name-gated. Do not identify a referenced character by appearance alone.
 {{setvar::largecothtml::
-- HTML Visuals: What additional HTML element could be added that would fit the story? Is the new element varied and different from those used previously?}}
+- Add a story-appropriate HTML element that differs from recent artifacts.}}

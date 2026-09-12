@@ -2,24 +2,14 @@
 
 # ⊹ ✦ INLINE IMAGE GENERATION ✦ ⊹
 
-### *Images & videos, born right inside your chat.*
+### *Generated images, placed directly inside your chat.*
 
-[![Version](https://img.shields.io/badge/version-3.0.0-4a6a8a?style=flat-square)](manifest.json)
+[![Version](https://img.shields.io/badge/version-3.3.0-4a6a8a?style=flat-square)](manifest.json)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-2d5a3a?style=flat-square)](LICENSE)
 [![SillyTavern](https://img.shields.io/badge/SillyTavern-extension-3a7a4a?style=flat-square)](https://github.com/SillyTavern/SillyTavern)
 
-The AI writes a media tag in its reply → the extension intercepts it, calls your
-image/video API, and drops the finished result **into the message where the tag was.**
-
-*No side panels. No workflow interruption. No manual prompting.*
-
-</div>
-
----
-
-<div align="center">
-
-✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦ ⊹ ✦
+The AI writes an image tag in its reply → the extension intercepts it, calls your
+image API, and places the finished result **where the tag was.**
 
 </div>
 
@@ -27,15 +17,18 @@ image/video API, and drops the finished result **into the message where the tag 
 
 | | |
 |---|---|
-| 🖼️ **Inline images** | The AI embeds an image tag; it becomes a real picture in place. |
-| 🎬 **Inline video** *(experimental)* | Text-to-video, image-to-video, identity references. |
-| 🔌 **Protocol-driven** | OpenAI-compatible · Gemini-compatible · Naistera — one UI. |
-| 👥 **Character references** | Consistent faces via per-character / NPC reference photos. |
-| 🎯 **Name-gated refs** | Refs sent only when the name appears — with comma aliases & whole-word matching. |
-| 🗂️ **Global or per-chat refs** | Share one set everywhere, or let each chat keep its own. |
-| 💾 **API presets** | Save & swap whole provider configs in one click. |
-| 📱 **Mobile / iOS aware** | Dedicated transport so Safari doesn't kill long requests. |
-| 🔒 **Privacy-minded** | API keys redacted from all logs. |
+| **Inline images** | The AI embeds an image tag; it becomes a real picture in place. |
+| **Protocol-driven** | OpenAI-compatible · Gemini-compatible · Naistera — one UI. |
+| **Character references** | Consistent faces via per-character and NPC reference photos. |
+| **Reference cropping** | Crop uploaded photos before assigning them to a slot. |
+| **Name-gated refs** | Refs sent only when the name appears, with aliases and whole-word matching. |
+| **Scoped refs** | Global, per-character/group, or per-chat reference sets. |
+| **Image Packs** | A local library of reference images, reusable across every chat. |
+| **API presets** | Save and swap whole provider configs in one click. |
+| **Prompt Model** | A separate text model composes image tags after the narrative is done. |
+| **Mobile / iOS aware** | Uses XMLHttpRequest for long-running image requests on iOS. |
+| **English / Russian UI** | Follows SillyTavern's language; other languages use English. |
+| **Diagnostics** | No idle polling; logs include status and errors, with credential redaction. Review logs before sharing. |
 
 ---
 
@@ -43,6 +36,7 @@ image/video API, and drops the finished result **into the message where the tag 
 
 - [Install](#-install)
 - [How it works](#-how-it-works)
+- [Prompt Model](#-prompt-model)
 - [Tag format](#-tag-format)
 - [API Type](#-api-type--pick-the-protocol-your-provider-speaks)
 - [Per-type settings](#-per-type-settings)
@@ -55,7 +49,6 @@ image/video API, and drops the finished result **into the message where the tag 
 - [Retry settings](#-retry-settings)
 - [iOS / mobile](#-ios--mobile)
 - [Troubleshooting](#-troubleshooting)
-- [Files](#-files)
 - [Credits](#-credits)
 - [License](#-license)
 
@@ -71,30 +64,76 @@ image/video API, and drops the finished result **into the message where the tag 
 The extension appears in the left sidebar as **⊹ INLINE IMAGE GENERATION ⊹**.
 A small green dot next to the drawer title means it's active.
 
-> ✦ All API types work out of the box — no server patches required.
+Reload SillyTavern after updating. Your existing packs and reference photos are kept.
 
 ---
 
 ## ⊹ How it works
 
-```
-AI writes a message containing an image tag
-      │
-      ▼
-Extension replaces the tag with a loading spinner
-      │
-      ▼
-Collects your reference images (char, user, matched NPCs)
-      │
-      ▼
-POSTs to your configured image API
-      │
-      ▼
-Generated image replaces the spinner in the rendered message
+The AI writes an image tag inside its message. The extension swaps that tag for
+a spinner, collects the reference images whose names appear in the prompt, POSTs
+to your configured provider, and replaces the spinner with the result.
+
+Generation starts automatically when an image tag appears.
+
+---
+
+## ✦ Prompt Model
+
+Prompt Model mode separates narrative writing, image prompting, and rendering:
+
+```text
+Main model writes the narrative
+        ↓
+Prompt model reads that narrative and returns one IIG HTML image block
+        ↓
+IIG sends the block to the configured image model
 ```
 
-Fully automatic — with aggressive ref caching, abort-on-reclick, iOS-safe
-transport, and debounced settings saves.
+The image block is saved alongside the reply without adding its HTML and image
+prompt to the narrative sent to your main model.
+
+### ⊹ Setup
+
+1. Use SillyTavern's **Chat Completion** API and choose the main provider normally.
+2. Open IIG settings → **Prompt Model**.
+3. Choose **Default** and a text model from the current SillyTavern provider, or
+   choose **Gemini-compatible** and enter its base endpoint, API key and model ID.
+4. Click **Import prompt…**, select a preset prompt beginning with `<image_gen>`, then confirm.
+5. Enable **Use separate prompt model**.
+
+Importing stores one frozen snapshot and disables its Prompt Manager entry.
+Turning Prompt Model off re-enables that prompt and restores the inline workflow;
+turning it back on refreshes the snapshot if the source was edited meanwhile.
+Prompts created through Style Jam are adopted and disabled automatically, though
+Style Jam is not required.
+
+**Default** uses SillyTavern's current provider and generation settings.
+**Gemini-compatible** has its own endpoint, key and model, separate from your
+image provider. Save these together as a named connection preset. Editing a
+connection field detaches the selected preset without changing the saved copy.
+You can add up to 20 Gemini connection presets.
+
+Its **Test connection** sends a short text request and can use paid tokens.
+A valid blocked or empty response is reported as a connection success with a note.
+This route sends text context only, not images attached to the conversation.
+
+Keys are included in saved settings and presets. Treat settings backups as
+private, and review exported logs before sharing them, even with redaction.
+
+### ⊹ Image-only guidance
+
+With Prompt Model enabled, an **OOC** button appears beside **Send**. It holds
+direction only the prompt model sees — composition, mood, camera — and the
+narrative model never receives it. Use normal `[OOC: ...]` text for the main
+model instead.
+
+Guidance is per chat and lasts until **Clear**; the button carries an accent dot
+while it is set. `{{char}}` and `{{user}}` resolve when the request is built.
+
+**Edit** on a sidecar message shows the narrative and the sidecar source together.
+Saving keeps the stored narrative clean. Editing a prompt does not re-render the
+image — press regenerate for that.
 
 ---
 
@@ -103,7 +142,7 @@ transport, and debounced settings saves.
 The AI writes image requests using this HTML tag:
 
 ```html
-<img data-iig-instruction='{"style":"semi_realistic","prompt":"Axel reaching past Charlotte for a book, warm kitchen light","aspect_ratio":"16:9","image_size":"2K"}' src="[IMG:GEN]">
+<img data-iig-instruction='{"style":"semi_realistic","prompt":"Ace reaching past Savannah for a book, warm kitchen light","aspect_ratio":"16:9","image_size":"2K"}' src="[IMG:GEN]">
 ```
 
 After generation, `src` is rewritten to the saved file path.
@@ -117,36 +156,8 @@ A legacy `[IMG:GEN:{json}]` format is also accepted.
 | `style` | | Prefix prepended to the prompt (e.g. `semi_realistic`, `anime`). |
 | `aspect_ratio` | | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9`. |
 | `image_size` | | Resolution hint: `1K`, `2K`, `4K` (Gemini); mapped to quality for OpenAI. |
-| `quality` | | OpenAI: `standard` or `hd`. |
-| `preset` | | Naistera Grok only: `digital` or `realism`. |
-
-### ⊹ Video tags — experimental
-
-> ⚠️ Video is **experimental** — some providers return errors (502s) or
-> temporary links. It's marked experimental in the settings panel too.
-
-When a **Video model** is set (OpenAI/Gemini-style providers), the AI can request a clip:
-
-```html
-<img data-iig-video='{"prompt":"Charlotte turns and smiles, gentle breeze","duration":4,"resolution":"720p","aspect_ratio":"16:9","ref_mode":"reference"}' src="[VID:GEN]">
-```
-
-A legacy `[VID:GEN:{json}]` format is also accepted.
-
-| Field | Description |
-|---|---|
-| `prompt` | What happens in the clip. |
-| `duration` | Seconds. |
-| `resolution` | `480p`, `720p`, `1080p`, `4K`. |
-| `aspect_ratio` | Same ratios as images. |
-| `audio` | `true` / `false` (when the model supports it). |
-| `ref_mode` | `reference` (default — matched photo as an **identity** reference) or `first_frame` (animates the photo as the opening frame). |
-| `negative_prompt` | Things to avoid. |
-
-Videos can take several minutes (the provider renders synchronously). The finished
-file is re-hosted on your ST server so it survives the provider's temporary link
-expiring. Identity references (`ref_mode:"reference"`) need a reference-capable
-model (e.g. a Seedance or Wan `-r2v` model); Veo only does text-to-video / first-frame.
+| `quality` | | OpenAI: `auto`, `low`, `medium`, `high`, `standard`, or `hd`, depending on model. |
+| `preset` | | Naistera Grok models only: `digital` or `realism`. |
 
 > ✦ See [prompt.md](prompt.md) for a system-prompt template to paste into your AI's instructions.
 
@@ -160,32 +171,43 @@ in that shape.
 
 | API Type | Paths appended to your base URL | Auth header | Refs |
 |---|---|---|:---:|
-| **OpenAI-compatible** | `/v1/images/generations`, `/v1/models` | `Authorization: Bearer` | up to 4 |
+| **OpenAI-compatible** | `/v1/images/generations`, `/v1/images/edits`, `/v1/chat/completions`, `/v1/models` | `Authorization: Bearer` | up to 4; NovelAI: 1 |
 | **Gemini-compatible** | `/v1beta/models/{model}:generateContent`, falls back to `/v1/models` for discovery | `Authorization: Bearer` (+ `x-goog-api-key` for `*.googleapis.com`) | up to 4 |
 | **Naistera** | `/api/generate` (defaults to `naistera.org` if blank) | `Authorization: Bearer` | up to 4 (Grok / Nano Banana 2) |
 
-> ⊹ NovelAI is available **as a Naistera sub-model** (Naistera → Model: NovelAI).
+NovelAI uses Images without references and Chat Completions with exactly one.
+Multiple matches stop before a request is sent.
 
 ### ⊹ OpenAI vs Gemini — which one?
 
 - Model names like `gpt-image-1`, `dall-e-3`, `flux-*` → **OpenAI-compatible**.
 - Model names like `gemini-*`, `nano-banana-*`, `imagen-*` → **Gemini-compatible**.
-- Unsure? Try **Gemini-compatible** first; most aggregators speak it, and model
-  discovery falls back to `/v1/models` if the Gemini path returns nothing.
+- Select the API family documented by your provider for the chosen model.
 
 ### ⊹ Where to paste your base URL
 
-Include **any path prefix your provider documents** (e.g. `/compatible`, `/v1`).
-The extension only appends method-specific suffixes.
+Enter the provider's base URL and include protocol prefixes such as `/compatible`.
+The extension appends the method-specific suffix. OpenAI Images requests remove a
+terminal `/compatible` segment because that segment belongs to the Gemini route.
 
 ```
 https://api.openai.com                    → /v1/models
 https://your-aggregator.example/compatible → /compatible/v1beta/models/{model}:generateContent
 ```
 
+The **Model** field accepts typing as well as suggestions from **Refresh models**.
+This matters when a provider lists a model family instead of every exact model ID.
+
 ---
 
 ## ✦ Per-type settings
+
+| Panel | Purpose |
+|---|---|
+| **API Configuration** | Provider, endpoint, key, model and saved presets. Collapsed by default. |
+| **Character References** | Character, user and NPC photos. Open by default for quick access. |
+| **Reference Options** | Matching rules, three-level reference scope and always-send toggles. |
+| **Generation Settings** | Provider-specific size, quality, resolution and reference controls. |
 
 ### ⊹ OpenAI-compatible
 
@@ -194,10 +216,18 @@ https://your-aggregator.example/compatible → /compatible/v1beta/models/{model}
 | Size | `1024x1024`, `1792x1024`, `1024x1792`, `512x512` |
 | Quality | `auto` / `low` / `medium` / `high` (`gpt-image-*`), `standard` / `hd` (`dall-e-3`) |
 
-Refs are sent as `body.image` (single data URL) or `body.image[]` (array).
-For `gpt-image-2*`: quality is auto-clamped to `low`/`medium`/`high`/`auto`
-(`standard`→`medium`, `hd`→`high`). With refs attached, requests route to
-`/v1/images/edits`; text-to-image stays on `/v1/images/generations`.
+With refs attached, GPT Image models (`gpt-image-1*`, `gpt-image-2*` and
+`chatgpt-image-latest`) route to multipart `/v1/images/edits`; text-to-image
+stays on `/v1/images/generations`, and other OpenAI-compatible models keep their
+JSON image field. Quality is clamped to `low` / `medium` / `high` / `auto`.
+Earlier GPT Image models use their supported square, landscape or portrait
+size; GPT Image 2 keeps flexible aspect-driven dimensions.
+
+NovelAI requires a full ID such as
+`novelai/nai-diffusion-5-curated-1024x1024-s20`. `aspect_ratio` rewrites only
+the resolution; family and steps stay unchanged. Size, Quality and `image_size`
+are omitted. Zero references use Images, one uses Chat Completions, and multiple
+matches stop before a request is sent.
 
 ### ⊹ Gemini-compatible
 
@@ -210,32 +240,23 @@ Aspect ratio is tag-driven. Both `Authorization: Bearer` and `x-goog-api-key`
 are sent when the host ends in `googleapis.com`, so Google-native and Bearer-only
 aggregators both work. Refs go as `inlineData` parts (MIME auto-detected).
 Uncheck **Send reference images** to force text-only for providers that reject refs.
+If the standard Gemini path returns 404, the extension tries `/compatible` once
+and remembers the working route for the session.
 
 ### ⊹ Naistera
 
 | Setting | Options |
 |---|---|
-| Model | **Grok** / **Nano Banana 2** / **NovelAI** |
-| Preset | None / Digital / Realism (Grok only) |
+| Model | **Grok** / **Grok Pro** / **Nano Banana 2** / **NovelAI** |
+| Preset | None / Digital / Realism (Grok models only) |
 | Send reference images | on / off (Grok + Nano Banana 2 only) |
 
-- `Nano Banana 2` is Naistera's current Google-nano-banana upstream.
-- `NovelAI` under Naistera never accepts references; they're omitted regardless of the toggle.
-- Grok has flaky ref support — on `grok_refs_temporarily_unavailable` the extension
-  auto-retries once without refs (with a toast). Uncheck **Send reference images** to skip them up-front.
+- `Nano Banana 2` uses Naistera's Google Nano Banana upstream.
+- Grok Pro and NovelAI omit references regardless of the toggle.
+- References use named `reference_objects`; endpoints that explicitly reject that field are retried once with legacy `reference_images` and remembered for the session.
+- On `grok_refs_temporarily_unavailable`, the extension retries once without refs.
+- Turn off **Send reference images** to skip Naistera references.
 - Endpoint defaults to `https://naistera.org` when blank.
-
-### ⊹ Video — experimental
-
-| Setting | Options |
-|---|---|
-| Video model | free text (blank = video off; e.g. a Veo, Seedance, or Wan model) |
-| Default duration | seconds (tag can override) |
-| Default resolution | `480p`, `720p`, `1080p`, `4K` (tag can override) |
-| Request audio track | on / off |
-
-Set a Video model to enable video. The AI then requests clips with `[VID:GEN]`
-tags; tag fields override these defaults. See [Video tags](#-video-tags--experimental).
 
 ---
 
@@ -243,14 +264,9 @@ tags; tag fields override these defaults. See [Video tags](#-video-tags--experim
 
 Save named snapshots of your API configuration and swap between them in one click.
 
-Each preset stores: `apiType`, `endpoint`, `apiKey`, `model`, `pathOverride`,
-`showAllModels`, `naisteraModel`, `naisteraSendRefs`, `videoModel`. Everything
-else (generation params, refs, retries) stays on the live config.
-
-> 🔒 **Where presets live:** inside SillyTavern's `settings.json`, under
-> `extension_settings.inline_image_gen.presets` (typically
-> `~/SillyTavern/data/<your-user>/settings.json`). No cloud, no separate file —
-> the same place ST already keeps every API key you've entered.
+Each preset keeps the provider connection, API key, model, advanced connection
+options and provider reference toggles. Size, quality, reference photos and
+retry settings are not changed when you load a preset.
 
 ---
 
@@ -260,6 +276,16 @@ Upload photos so generated characters look consistent across images. References
 are compressed to 768px max and stored as real files on the ST server (not in
 `settings.json`).
 
+### Cropping uploads
+
+**Crop uploaded references** is on by default in Character References. Choose
+a photo, adjust the crop, then confirm. Cancel leaves the previous photo alone.
+Turn the option off to upload without the extra step; choosing an image from
+Packs never opens the crop dialog.
+
+Cropping uses a preview up to 768px, so very tight crops can lose detail.
+References are saved as JPEG; transparency is not preserved.
+
 ### ⊹ Slots
 
 | Slot | Sent when |
@@ -268,42 +294,43 @@ are compressed to 768px max and stored as real files on the ST server (not in
 | user | Your persona's name appears in the prompt (falls back to the active persona name if unnamed). |
 | NPC 1–4 | The NPC's name appears in the prompt text. |
 
-By default **every** slot — including char & user — is sent only when its name is
-in the prompt, keeping unrelated characters out of a scene. Override per main slot:
-
-- **Always send Char reference** — send the char photo regardless of name match.
-- **Always send User reference** — same for the user photo.
+Every slot, char and user included, is sent only when its name is in the prompt —
+this is what keeps unrelated characters out of a scene. **Always send Char
+reference** and **Always send User reference** override that for those two slots.
 
 ### ⊹ Name matching
 
-Matching is **case-insensitive** and **whole-word** (`Ace` matches `Ace`, not
-`space`). Each slot name can hold **comma-separated aliases** — any one matches:
+Matching is **case-insensitive** and **whole-word**. Each slot name can hold
+comma-separated aliases — any one matches:
 
 ```
-Name field:  Elodie, Lodi, Ellie
-"Lodi waves hello"  → match ✦
-"melodies playing"  → no match (whole-word)
+Name field:  Ace, Acey
+"Ace opens the door"  → match
+"a quiet space"       → no match (whole-word)
 ```
 
-The first alias is used when naming the file on the server.
+The first alias names the file on the server.
 
 ### ⊹ 4-image limit
 
-Most providers accept at most 4 refs/request. Priority: **char → user → NPCs**
-(slot order). Extras are silently dropped.
+The extension sends at most 4 refs/request. Priority: **char → user → NPCs**
+(slot order). References after the fourth are not sent.
 
 ### ⊹ Smart file naming
 
 Type a name and click away → the server file is renamed to match:
 
 ```
-iig_ref_char_nolan.jpeg
-iig_ref_user_charlotte.jpeg
-iig_ref_npc0_axel.jpeg
+iig_ref_char_ace.jpeg
+iig_ref_user_savannah.jpeg
+iig_ref_npc0_elias.jpeg
 ```
 
-Collisions get numeric suffixes (`_2`, `_3`, …). Files are deleted when you clear
-a slot, replace the photo, or use **Clear refs folder**.
+Collisions get numeric suffixes (`_2`, `_3`, …). Clearing or replacing a slot
+retains its old server file because an unloaded chat may still reference it.
+Use **Check ref storage** for an on-demand file count and measured size, then
+**Clear refs folder** when you intentionally want to remove every stored ref.
+The size check performs no polling or startup scan.
 
 ### ⊹ Caching
 
@@ -311,18 +338,61 @@ Refs are base64-cached in memory across generations. The first generation in a
 chat does the real fetch + encode (heaviest step on mobile); the rest serve from
 cache. Cache clears on chat switch.
 
-### ⊹ Global vs Per-chat
+### ⊹ Image Packs
 
-The **References** dropdown sets where reference slots live:
+A local library for reference images, so a face you reuse does not need
+re-uploading per chat. The **Packs** pill sits next to **Remove** on every slot.
+
+| Action | Control |
+|---|---|
+| Create a pack | **New pack** |
+| Rename the selected pack | **Rename pack** |
+| Delete the selected pack | **Delete pack** — asks first, and names the image count |
+| Import images | **Add images** — multi-select, PNG / JPG / WebP |
+| Browse | Counted pack list, thumbnail grid, and **Previous page** / **Next page** |
+| Sort images | **Newest**, **Oldest**, **Name A–Z** or **Name Z–A** |
+| Measure storage | **Check storage** reports pack count, image count and local size on demand |
+| Use one | Click a thumbnail; it fills the slot you opened the popup from |
+| Manage one | Open its corner menu to rename, move to an existing or new pack, or delete it |
+
+Packs are **global** — one library shared by every chat, character and scope,
+independent of the **Reference set** dropdown. Picking from a pack fills a slot
+exactly as an upload does, so the active scope decides where that assignment is
+stored. A subtle **Pack** marker stays with that assignment after reload and
+scope changes. Replacing it with a normal upload or removing the photo clears
+the marker. Older assignments made before this update may not have a marker.
+
+- Stored in this browser via IndexedDB, not on the ST server. Clearing site data
+  clears packs; another browser or profile has its own library.
+- Sorting is remembered for the current session. Storage is measured only when
+  requested and marked stale after pack or image changes.
+- New imports are saved as JPEG at up to 768px to reduce storage use;
+  transparency is not preserved. Previously stored originals are left unchanged.
+- The gallery uses separate high-quality thumbnails. Older thumbnails upgrade
+  automatically, one at a time, when their page is viewed.
+- Each file must be at most 12MB. PNG, JPEG (including JFIF/JPE/JIF) and WebP
+  are supported; the contents must match the file extension and decode properly.
+- If browser storage fills up, remove unused library images or packs and retry.
+- Deleting a pack does not touch reference slots already filled from it; those
+  images live on the server as normal refs.
+- Moving or deleting one packed image also leaves already-filled reference
+  slots unchanged.
+
+### ⊹ Global, Per-character and Per-chat
+
+The **Reference set** dropdown controls where reference slots live:
 
 - **Global** *(default)* — one reference set shared by every chat.
-- **Per-chat** — each chat remembers its own set. Switching chats swaps the
-  photos; a chat with none falls back to global. Editing any slot forks the
-  current chat its own copy.
+- **Per-character** — each character card remembers its own set; groups receive
+  one set per group ID. Until edited, a character/group inherits Global.
+- **Per-chat** — each chat remembers its own set. Until edited, a chat inherits
+  its character/group set, then Global.
 
-Image files are shared on the server — only *which* photo each chat uses is
-per-chat. In Per-chat mode, **Reset this chat to global** clears just this chat's
-saved set (and removes its unshared files); other chats are unaffected.
+Changing the dropdown only changes which set is displayed; it never copies,
+moves, or deletes refs. Editing a slot lazily creates that scope's independent
+set. **Reset character to Global** removes the character/group override, while
+**Reset chat to inherited** removes only the chat override. Typed names are
+preserved when **Clear refs folder** removes image files and assignments.
 
 ---
 
@@ -334,43 +404,53 @@ for non-standard providers:
 - **Path override** — replaces the auto-appended URL suffix (e.g. if your provider
   serves images from `/api/v2/imagine`). Empty by default. Provider-agnostic.
 - **Show all models** — disables the built-in image-model keyword filter. Enable
-  if **Test Connection** says "no models found" but you know your provider has them.
+  when a successful model refresh omits models you know the provider offers.
 
 ---
 
 ## ✦ Image controls
 
 **On any generated image**
-- 🖥️ Desktop: hover to reveal download + regenerate buttons; click for a full-size lightbox.
-- 📱 Mobile: single tap shows buttons (auto-hide after 4s). No lightbox.
+- Desktop: hover for download and regenerate buttons; click for a lightbox.
+- Mobile: tap once to show the buttons; they hide after 4 seconds. No lightbox.
 
-**On error images** — a retry button regenerates just that one image, untouched rest.
+| Action | Scope |
+|---|---|
+| **Regenerate** | Regenerates only that image from its existing instruction. |
+| **Rewrite prompt + regenerate** | Rewrites and regenerates the selected narrative image when its exact recent Chat Completion context is available; otherwise it explains that the context expired. |
+| **Download / Open image to save** | Downloads on desktop; opens the image for saving on mobile. |
+
+**On error images** — a retry button regenerates only that image.
 
 **In the message menu** — a stacked-images icon regenerates **all** images at once.
 
 **Rapid re-clicks** — clicking regenerate twice aborts the in-flight request; only
 the newest result lands. No stale overwrites.
 
+### ⊹ Completion sounds
+
+Desktop reuses SillyTavern's message sound once per finished operation, not once
+per image. SillyTavern's own **Play message sound** and **Only when unfocused**
+settings still govern it. Mobile stays silent.
+
 ---
 
 ## ✦ Image Manager — optional
 
-If the [ST-ImageManager](https://github.com/Nufahi) extension is installed, an
-**Open Image Manager** button appears at the bottom of the settings panel — quick
-access to browse, sort, and clean up your generated images. Not installed? The
-button is hidden; nothing to configure.
+When [ST-ImageManager](https://github.com/Nufahi) is installed, **Open Image
+Manager** appears at the bottom of the settings panel.
 
 ---
 
 ## ✦ Error handling
 
-- **Auto-retry** on 429 / 502 / 503 / 504 / timeout, with configurable
-  max-retries + base delay (exponential backoff).
-- **Smart hints** — on an error, a second toast suggests likely fixes (e.g. "try
-  switching API Type to Gemini-compatible"). Same suggestion won't repeat within 30s.
-- **Test Connection** — distinct messages for *no endpoint / no key / unreachable
-  / auth rejected / path not found / model list empty*.
-- **Request body audit logs** (via Export Logs) show exactly what hit the wire.
+- **Smart hints** — errors carry a concrete recovery action. The same suggestion
+  does not repeat within 30 seconds.
+- **Refresh models** distinguishes a valid empty catalog from request failure.
+- **Test Connection** distinguishes *no endpoint / no key / unreachable / auth
+  rejected / path not found / model list empty*. Naistera checks its generation
+  route without creating an image.
+- **Export Logs** records redacted request metadata and diagnostics.
 
 ---
 
@@ -378,27 +458,35 @@ button is hidden; nothing to configure.
 
 | Setting | Default | Notes |
 |---|:---:|---|
-| Max Retries | `2` | `0` = manual retry only. |
-| Delay | `1500 ms` | Base delay; doubles each attempt. |
+| Max Retries | `2` | `0` disables retries, except one forced attempt on a 5xx. |
+| Delay | `1500 ms` | Doubles per attempt, capped at 30s, plus 0–500ms jitter. |
 
-Transient 5xx errors get at least one extra attempt even when Max Retries is 0 —
-the upstream is almost always the culprit.
+Retried automatically: **429**, **5xx**, transport **timeouts**, and image-level
+**safety blocks**. Timeouts get one retry at most; safety blocks two.
+
+A safety block on the *drawn image* is worth retrying — drawing is stochastic, so
+the same request often clears next attempt, and refs are kept either way. A block
+on the *prompt* is not retried: the filter rejected your text, so a replay fails
+identically. Rephrase it, or turn off reference images if the hint says so.
 
 ---
 
 ## ✦ iOS / mobile
 
-The extension detects iOS and switches fetch implementation so Safari doesn't kill
-long requests in background tabs.
+iOS uses XMLHttpRequest for long-running image requests.
 
-| | 🖥️ Desktop | 📱 iOS |
+| | Desktop | iOS |
 |---|:---:|:---:|
 | Transport | `fetch` + `AbortController` | `XMLHttpRequest` |
-| Timeout | 5 min | 3 min |
+| Image timeout | 5 min | 3 min |
 
-Settings are flushed on `visibilitychange` / `pagehide` / `beforeunload` so mobile
-tab-culling doesn't lose pending writes. The **Save settings** button forces a
-synchronous durable write before backgrounding.
+The extension attempts to save pending reference changes when you leave or
+background the page. Use **Save settings** and wait for confirmation before
+closing it; a browser force-close can still interrupt saving.
+
+Wrapping work is batched, reference images are cached, and idle polling is
+avoided. Large uploads and multiple simultaneous generations can still use
+significant memory and battery.
 
 ---
 
@@ -408,63 +496,44 @@ synchronous durable write before backgrounding.
 |---|---|
 | No images generating | Header dot green? Verify API Type, endpoint & key, then run **Test Connection**. |
 | "No models found" but you know they exist | Expand **Advanced** → enable **Show all models**. |
-| Generation 404s every request | Your **Endpoint URL** likely needs a documented path prefix (`/compatible`, `/v1`). |
+| Generation returns 404 | Verify the API Type, model ID, and documented endpoint base. Gemini automatically tests `/compatible`. |
+| GPT Image says the model is not a language model | Select **OpenAI-compatible** and use the provider base without `/compatible`. |
+| GPT Image references fail immediately | Confirm the request log shows `endpoint=edits`; references use multipart `/v1/images/edits`. |
 | Characters look different each time | Upload character photos under **Character References**. |
 | Grok on Naistera keeps failing with refs | Uncheck **Send reference images** under Naistera. |
-| No videos generating | Set a **Video model** (blank = off). Videos take minutes; provider must be OpenAI/Gemini-style. |
-| Character video shows the photo, not the character | Use `ref_mode:"reference"` with a reference-capable model (Seedance / Wan `-r2v`). Veo only does text-to-video / first-frame. |
 | Hanging "Saving…" | Upload timeouts guard this (120s images, 60s refs). If it persists, check ST server logs. |
 | Wrong aspect ratio | Aspect ratio is tag-driven. Tell the AI via OOC (*"all images 16:9"*) so it embeds it in each tag. |
+| Packs are empty on another machine | Packs live in this browser's IndexedDB, not on the server. Each browser or profile has its own library. |
+| A pack import rejects an image | Check the 12MB limit, supported format and matching file extension. |
 | Need detailed logs | Debug → **Export Logs**. Look for `[ERROR]`. API keys are redacted automatically. |
-
----
-
-## ✦ Files
-
-```
-index.js        core logic · API dispatch · settings UI · image controls
-style.css       styles · animations · mobile responsive
-manifest.json   SillyTavern extension metadata
-error.svg       placeholder for failed generations
-prompt.md       system-prompt template for your AI
-LICENSE         AGPL-3.0
-README.md       this file
-```
 
 ---
 
 ## ✦ Credits
 
 Forked from [sillyimages](https://github.com/0xl0cal/sillyimages) by [0xl0cal](https://github.com/0xl0cal).
+The Naistera contract follows its integration by [Astera.vt](https://github.com/stellvt).
 
-Rewritten by [**aceeenvw**](https://github.com/aceeenvw):
-
-- ⊹ Protocol-driven API dispatch (OpenAI / Gemini / Naistera — no model-name heuristics).
-- ⊹ Inline **video** generation (text-to-video, image-to-video, identity references).
-- ⊹ Character reference system: on-server storage, smart renaming, whole-word + alias matching, name-gated char/user/NPC slots.
-- ⊹ Global vs per-chat reference scoping.
-- ⊹ Named API presets for quick provider switching.
-- ⊹ iOS compatibility layer, abort-on-reclick, aggressive ref caching, debounced persistence.
-- ⊹ Image/video action buttons, lightbox, per-image retry, collapsible settings.
-- ⊹ Smart error hints, request-body audit logging, structured retry classification.
-- ⊹ Optional Image Manager launcher + handshake API.
+Rewritten by [**aceenvw**](https://github.com/aceeenvw) — protocol-driven
+dispatch, the reference and scoping system, Image Packs, Prompt Model, presets,
+the iOS transport layer, and the image controls documented above.
 
 ---
 
 ## ✦ License
 
 **AGPL-3.0-or-later** — see [LICENSE](./LICENSE).
-Copyright 2025–2026 **aceeenvw**.
+Copyright 2025–2026 **aceenvw**.
 
 If you fork or adapt this code:
 
 - Keep the copyright notice and license header in source files.
 - State your changes prominently.
 - Release under the same AGPL-3.0 license.
-- Credit both **aceeenvw** and **0xl0cal**.
+- Credit both **aceenvw** and **0xl0cal**.
 
 ```
-Based on notsosillynotsoimages by aceeenvw
+Based on notsosillynotsoimages by aceenvw
 https://github.com/aceeenvw/notsosillynotsoimages
 
 Original: SillyImages by 0xl0cal
@@ -477,6 +546,6 @@ Licensed under AGPL-3.0-or-later
 
 ⊹ ✦ ⊹ ✦ ⊹
 
-*Made with care by aceeenvw.*
+*Made with care by aceenvw.*
 
 </div>
