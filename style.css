@@ -459,19 +459,33 @@
     display: none !important;
 }
 
+.popup:has(.iig-pm-guidance-popup) {
+    width: min(690px, calc(100dvw - 2em));
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.popup:has(.iig-pm-guidance-popup) .popup-content {
+    width: 100%;
+    min-width: 0;
+}
+
 .iig-pm-guidance-popup {
     --iig-pmg-surface: color-mix(in srgb, var(--SmartThemeBlurTintColor, rgba(18, 18, 20, 0.96)) 88%, rgba(255, 255, 255, 0.03) 12%);
     --iig-pmg-surface-strong: color-mix(in srgb, var(--SmartThemeBlurTintColor, rgba(18, 18, 20, 0.98)) 80%, rgba(255, 255, 255, 0.08) 20%);
     --iig-pmg-border: color-mix(in srgb, var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16)) 80%, rgba(255, 255, 255, 0.12) 20%);
     --iig-pmg-accent: var(--SmartThemeQuoteColor, #6aa9ff);
     --iig-pmg-accent-soft: color-mix(in srgb, var(--SmartThemeQuoteColor, #6aa9ff) 16%, transparent);
-    --iig-pmg-accent-muted: color-mix(in srgb, var(--SmartThemeQuoteColor, #6aa9ff) 70%, var(--iig-pmg-surface) 30%);
     --iig-pmg-text: var(--SmartThemeBodyColor, #f2f0eb);
     --iig-pmg-muted: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f0eb) 62%, var(--SmartThemeEmColor, #9b9b9b) 38%);
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    width: min(640px, 100%);
+    gap: 16px;
+    width: 100%;
+    max-width: 640px;
+    min-width: 0;
+    margin-inline: auto;
+    box-sizing: border-box;
     color: var(--iig-pmg-text);
     text-align: left;
 }
@@ -492,7 +506,7 @@
 .iig-pm-guidance-title h3 {
     margin: 0;
     color: var(--iig-pmg-text);
-    font-size: 1.02em;
+    font-size: 1.12em;
     font-weight: 700;
     letter-spacing: 0.2px;
 }
@@ -506,40 +520,36 @@
 .iig-pm-guidance-copy {
     margin: -2px 0 0;
     color: var(--iig-pmg-muted);
-    font-size: 0.84em;
+    font-size: 0.9em;
     line-height: 1.5;
 }
 
 .iig-pm-guidance-block {
-    position: relative;
     display: flex;
     flex-direction: column;
     gap: 10px;
     padding: 14px;
     border: 1px solid var(--iig-pmg-border);
-    border-radius: 14px;
-    background:
-        linear-gradient(180deg, var(--iig-pmg-accent-soft) 0%, transparent 24%),
-        var(--iig-pmg-surface);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    border-radius: 10px;
+    background: var(--iig-pmg-surface);
+    box-shadow: none;
+    transition: border-color 0.2s ease;
 }
 
 .iig-pm-guidance-block:focus-within {
     border-color: color-mix(in srgb, var(--iig-pmg-accent) 45%, var(--iig-pmg-border) 55%);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.27);
 }
 
 .iig-pm-guidance-block-head {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: center;
     justify-content: space-between;
-    color: var(--iig-pmg-accent-muted);
-    font-size: 0.82em;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
+    color: var(--iig-pmg-text);
+    font-size: 0.9em;
+    font-weight: 600;
+    text-transform: none;
 }
 
 .iig-pm-guidance-state {
@@ -550,7 +560,7 @@
     border-radius: 999px;
     color: var(--iig-pmg-muted);
     background: var(--iig-pmg-surface-strong);
-    font-size: 0.76em;
+    font-size: 0.85em;
     font-weight: 600;
     letter-spacing: 0;
     text-transform: none;
@@ -567,8 +577,8 @@
     min-height: clamp(160px, 27vh, 260px);
     max-height: 48vh;
     padding: 12px 13px;
-    border-radius: 10px;
-    font-size: 0.88em;
+    border-radius: 6px;
+    font-size: 0.95em;
     line-height: 1.5;
     resize: vertical;
     white-space: pre-wrap !important;
@@ -599,14 +609,14 @@
 }
 
 .iig-pm-guidance-persistence i {
-    color: var(--iig-pmg-accent-muted);
+    color: var(--iig-pmg-accent);
 }
 
 .iig-pm-guidance-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    justify-content: center;
+    justify-content: space-between;
     width: 100%;
 }
 
@@ -668,6 +678,13 @@
     text-wrap: pretty;
     opacity: 0.78;
     font-size: 0.86em;
+}
+
+.iig-packs-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
 }
 
 .iig-packs-toolbar {
@@ -749,6 +766,32 @@
 
 .iig-packs-utilities > :is(select, button) {
     margin: 0;
+}
+
+@media (min-width: 901px) {
+    .iig-packs-controls {
+        flex-direction: row;
+        align-items: center;
+        padding-bottom: 12px;
+        border-bottom: 1px solid color-mix(in srgb, var(--iig-packs-border) 68%, transparent);
+    }
+
+    .iig-packs-toolbar {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0;
+        border-bottom: 0;
+    }
+
+    .iig-packs-select {
+        width: 0;
+    }
+
+    .iig-packs-utilities {
+        flex: 0 1 330px;
+        width: auto;
+        min-width: 0;
+    }
 }
 
 .iig-packs-toolbar .menu_button:active:not(:disabled),
@@ -1077,6 +1120,10 @@
         gap: 10px;
     }
 
+    .iig-packs-controls {
+        gap: 10px;
+    }
+
     .iig-packs-grid {
         grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
         max-height: 46dvh;
@@ -1149,24 +1196,18 @@
     align-items: center;
     justify-content: center;
     min-height: 44px;
+    margin: 0;
     padding-inline: 18px;
-    border-radius: 999px;
-    font-size: 0.86em;
-    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.12s ease;
-}
-
-.iig-pm-guidance-actions .menu_button:active {
-    transform: scale(0.96);
+    border-radius: 8px;
+    font-size: 0.9em;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .iig-pm-guidance-apply {
     min-width: 180px;
     color: var(--iig-pmg-text) !important;
     border-color: color-mix(in srgb, var(--iig-pmg-accent) 42%, var(--iig-pmg-border) 58%) !important;
-    background: linear-gradient(180deg,
-        color-mix(in srgb, var(--iig-pmg-accent) 20%, transparent),
-        color-mix(in srgb, var(--iig-pmg-accent) 10%, transparent)) !important;
-    box-shadow: 0 2px 10px color-mix(in srgb, var(--iig-pmg-accent) 10%, transparent);
+    background: var(--iig-pmg-accent-soft) !important;
 }
 
 .iig-pm-guidance-clear {
@@ -1213,7 +1254,7 @@
     align-items: center;
     justify-content: center;
     min-height: 44px;
-    margin-left: auto;
+    margin: 0 0 0 auto;
     padding-inline: 12px;
     border-radius: 999px;
     white-space: nowrap;
@@ -1270,6 +1311,7 @@
     .iig-pm-guidance-textarea {
         min-height: 30vh;
         max-height: 45vh;
+        font-size: max(16px, .95em);
     }
 
     .iig-pm-guidance-footer {
@@ -1514,7 +1556,7 @@
     to { opacity: 1; transform: scale(1); }
 }
 
-/* Retry-only wrapper around an error placeholder. Keep the error image at its
+/* Action wrapper around an error placeholder. Keep the error image at its
    proper block size inside the wrapper (avoids the inline 0x0 collapse). */
 .iig-placeholder-wrapper {
     display: inline-block;
@@ -1583,6 +1625,10 @@
 .iig-image-wrapper .iig-generated-image {
     margin: 0; /* wrapper handles margin */
     border-radius: 0; /* wrapper handles border-radius via overflow:hidden */
+}
+
+.iig-image-wrapper[hidden] {
+    display: none;
 }
 
 /* Action buttons — hidden by default */
@@ -1686,6 +1732,11 @@
 
 /* Touch devices: slightly larger targets */
 @media (pointer: coarse) {
+    .iig-stop-btn {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
     .iig-action-btn {
         width: 44px;
         height: 44px;
@@ -2018,6 +2069,10 @@ button.iig-regenerate-btn {
     cursor: pointer;
     transition: opacity 0.2s ease;
     border-radius: 12px;
+}
+
+.iig-ref-thumb-wrap > .iig-ref-upload-overlay {
+    margin: 0 !important;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2667,15 +2722,6 @@ details.iig-accordion[open] > :not(summary) {
     transform: scale(0.97);
 }
 
-#iig_manual_save.iig-maint-btn {
-    background: color-mix(in srgb, #3aa564 22%, var(--iig-surface-strong) 78%);
-    border-color: color-mix(in srgb, #3aa564 45%, var(--iig-border) 55%);
-}
-
-#iig_manual_save.iig-maint-btn:hover {
-    background: color-mix(in srgb, #3aa564 32%, var(--iig-surface-strong) 68%);
-}
-
 .iig-maint-danger {
     background: color-mix(in srgb, var(--iig-danger, #e0645f) 16%, var(--iig-surface-strong) 84%);
     border-color: color-mix(in srgb, var(--iig-danger, #e0645f) 45%, var(--iig-border) 55%);
@@ -2683,12 +2729,6 @@ details.iig-accordion[open] > :not(summary) {
 
 .iig-maint-danger:hover {
     background: color-mix(in srgb, var(--iig-danger, #e0645f) 26%, var(--iig-surface-strong) 74%);
-}
-
-/* Collapse the save-status line while empty so it doesn't leave a gap
-   between the maintenance buttons and the Image Manager launcher. */
-.iig-settings #iig_save_status:empty {
-    display: none;
 }
 
 /* Shared styling for secondary action buttons. */
@@ -2879,7 +2919,7 @@ details.iig-accordion[open] > :not(summary) {
 
     .iig-maintenance-row--primary {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 5px;
     }
 
@@ -2896,18 +2936,6 @@ details.iig-accordion[open] > :not(summary) {
 
     .iig-maintenance-row--primary .iig-maint-label-short {
         display: inline;
-    }
-}
-
-@media (max-width: 340px) {
-    .iig-maintenance-row--primary {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .iig-maintenance-row--primary #iig_clear_refs_folder {
-        grid-column: 1 / -1;
-        justify-self: center;
-        width: calc(50% - 3px);
     }
 }
 

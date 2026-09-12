@@ -29,6 +29,7 @@
 
 import { chat_completion_sources, createGenerationParameters, getChatCompletionModel, promptManager } from '/scripts/openai.js';
 import { playMessageSound } from '/scripts/power-user.js';
+import { updateViewMessageIds } from '/script.js';
 
 // A replacement must not race an older instance's persistence rollback.
 {
@@ -776,7 +777,7 @@ function exportLogs() {
     a.download = `iig-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    toastr.success(sanitizeForHtml(iigT('iig_logsExported')), sanitizeForHtml(iigT('iig_title')));
+    toastr.success(sanitizeForHtml(iigT('iig_logsExported')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
 }
 
 // apiType is the single source of truth for request routing — no model-name
@@ -1072,6 +1073,9 @@ function validateEndpointShape(endpoint) {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
         return `Endpoint must use http:// or https:// (got "${parsed.protocol}")`;
     }
+    if (parsed.href.includes('?') || parsed.href.includes('#') || parsed.username || parsed.password) {
+        return 'Use a base endpoint without credentials, query parameters or fragments';
+    }
 
     if (parsed.protocol === 'http:' && !isLoopbackHostname(parsed.hostname) && !_warnedPlaintextEndpoint) {
         _warnedPlaintextEndpoint = true;
@@ -1353,14 +1357,12 @@ async function migrateBase64Refs() {
     }
 }
 
-// Captured reference to ST's original window.saveSettings. Must be taken
-// BEFORE our function declaration shadows it in global scope, or calling
-// window.saveSettings() from inside would recurse forever.
+// Optional synchronous hook exposed by some host versions.
 let _stSaveSettings = null;
 let _stSaveSettingsCaptured = false;
 
 // opts.sync === true: non-debounced write + immediate localStorage flush.
-// Used by the manual save button and mobile visibilitychange/pagehide path.
+// Used by mobile visibilitychange/pagehide and explicit settings mutations.
 // Default: debounced — input-event handlers call this per keystroke.
 function saveSettings(opts) {
     const sync = !!(opts && opts.sync);
@@ -1435,8 +1437,8 @@ const IIG_MESSAGES_I18N = {
         noTags: 'No tags to regenerate',
         regeneratingImages: 'Regenerating {count} image(s)...',
         photoSaved: 'Photo saved to server',
-        cropTitle: 'Crop reference image',
-        cropFailed: 'Could not crop the reference image',
+        cropTitle: 'Crop image',
+        cropFailed: 'Could not crop the image',
         photoUploadFailed: 'Photo upload failed: {error}',
         slotCleared: 'Slot cleared',
         session: 'Session: {counts}',
@@ -1478,6 +1480,7 @@ const IIG_MESSAGES_I18N = {
         endpointMissing: 'Endpoint URL not configured',
         endpointInvalid: 'Endpoint is not a valid URL: {endpoint}',
         endpointProtocol: 'Endpoint must use http:// or https:// (got "{protocol}")',
+        endpointBaseOnly: 'Use a base endpoint without credentials, query parameters or fragments.',
         apiKeyMissing: 'API key not configured',
         modelMissing: 'Model not selected',
         modelPathInvalid: 'Invalid model id for URL path: {model}',
@@ -1487,9 +1490,10 @@ const IIG_MESSAGES_I18N = {
         upstreamUnavailable: 'Provider upstream unavailable ({status}). Retry in a minute.',
         imageRequestFailed: 'Image request failed ({status})',
         downloadTypeInvalid: 'Unexpected download type: {type}',
+        imageDownloadLimit: 'Image download is too large or streaming is unavailable (maximum 32 MB).',
+        imageUrlInvalid: 'Invalid image URL.',
         noFile: 'No file provided',
         refFolderClearing: 'Reference folder is being cleared',
-        refScopeChanged: 'Reference scope changed before upload completed',
         imageSourceMissing: 'Could not identify the selected image source',
         hintTitle: 'Image Generation - hint',
         hintOpenai404: 'Endpoint returned 404. If your provider speaks the Gemini protocol, try switching API Type to "Gemini-compatible".',
@@ -1541,8 +1545,8 @@ const IIG_MESSAGES_I18N = {
         noTags: 'Нет тегов для повторной генерации',
         regeneratingImages: 'Повторная генерация изображений: {count}...',
         photoSaved: 'Фото сохранено на сервере',
-        cropTitle: 'Обрезать изображение референса',
-        cropFailed: 'Не удалось обрезать изображение референса',
+        cropTitle: 'Обрезать изображение',
+        cropFailed: 'Не удалось обрезать изображение',
         photoUploadFailed: 'Не удалось загрузить фото: {error}',
         slotCleared: 'Слот очищен',
         session: 'За сеанс: {counts}',
@@ -1584,6 +1588,7 @@ const IIG_MESSAGES_I18N = {
         endpointMissing: 'URL endpoint не настроен',
         endpointInvalid: 'Некорректный URL endpoint: {endpoint}',
         endpointProtocol: 'Endpoint должен использовать http:// или https:// (указано "{protocol}")',
+        endpointBaseOnly: 'Укажите базовый адрес без учётных данных, параметров запроса и фрагментов.',
         apiKeyMissing: 'API-ключ не настроен',
         modelMissing: 'Модель не выбрана',
         modelPathInvalid: 'Недопустимый ID модели для пути URL: {model}',
@@ -1593,9 +1598,10 @@ const IIG_MESSAGES_I18N = {
         upstreamUnavailable: 'Сервер провайдера недоступен ({status}). Повторите через минуту.',
         imageRequestFailed: 'Не удалось запросить изображение ({status})',
         downloadTypeInvalid: 'Неожиданный тип скачанного файла: {type}',
+        imageDownloadLimit: 'Изображение слишком большое или потоковая загрузка недоступна (максимум 32 МБ).',
+        imageUrlInvalid: 'Некорректный адрес изображения.',
         noFile: 'Файл не выбран',
         refFolderClearing: 'Папка референсов очищается',
-        refScopeChanged: 'Область референсов изменилась до завершения загрузки',
         imageSourceMissing: 'Не удалось определить источник выбранного изображения',
         hintTitle: 'Генерация изображений - подсказка',
         hintOpenai404: 'Endpoint вернул 404. Если провайдер использует протокол Gemini, попробуйте тип API "Gemini-совместимый".',
@@ -1692,6 +1698,7 @@ const PROMPT_MODEL_I18N = {
         guidanceUnavailable: 'Enable Prompt Model to use image-only guidance.',
         selectedPromptMissing: 'Selected prompt no longer exists',
         modelStatusError: 'Model status returned {status}',
+        catalogFailed: 'Could not load the model catalog.',
         catalogHttpError: 'Model catalog request failed (HTTP {status})',
         catalogUnavailable: 'No model catalog endpoint responded',
         noRequestText: 'Prompt Model request has no text content',
@@ -1714,9 +1721,10 @@ const PROMPT_MODEL_I18N = {
         rerollContextChanged: 'Prompt reroll context changed',
         mainModelMissing: 'No current Chat Completion model is selected',
         imageSourceChanged: 'Selected image source changed before replacement',
-        replacementRejected: 'Image generation could not accept the replacement tag',
         editSanitizerUnavailable: 'DOMPurify is unavailable; edited sidecar cannot be safely processed',
         editFailed: 'Could not safely process the edited image block; your edit was not applied.',
+        copyConfirm: 'Create a copy of this message with its edited image block?',
+        copyFailed: 'Could not complete the message copy.',
         endpointInvalid: 'Set a valid HTTP or HTTPS endpoint for Prompt Model.',
     },
     ru: {
@@ -1792,6 +1800,7 @@ const PROMPT_MODEL_I18N = {
         guidanceUnavailable: 'Включите модель промпта для отдельных указаний.',
         selectedPromptMissing: 'Выбранный промпт больше не существует',
         modelStatusError: 'Проверка моделей вернула код {status}',
+        catalogFailed: 'Не удалось загрузить список моделей.',
         catalogHttpError: 'Не удалось загрузить каталог моделей (HTTP {status})',
         catalogUnavailable: 'Ни один endpoint каталога моделей не ответил',
         noRequestText: 'Запрос модели промпта не содержит текста',
@@ -1814,9 +1823,10 @@ const PROMPT_MODEL_I18N = {
         rerollContextChanged: 'Контекст повторного создания промпта изменился',
         mainModelMissing: 'Не выбрана текущая модель Chat Completion',
         imageSourceChanged: 'Источник выбранного изображения изменился до замены',
-        replacementRejected: 'Генерация изображения не смогла принять новый тег',
         editSanitizerUnavailable: 'DOMPurify недоступен; невозможно безопасно обработать измененный блок изображения',
         editFailed: 'Не удалось безопасно обработать измененный блок изображения; изменения не применены.',
+        copyConfirm: 'Создать копию сообщения с измененным блоком изображения?',
+        copyFailed: 'Не удалось завершить копирование сообщения.',
         endpointInvalid: 'Укажите корректный HTTP или HTTPS endpoint для модели промпта.',
     },
 };
@@ -2342,7 +2352,7 @@ async function openPromptModelGuidancePopup() {
     };
     bindIig(applyButton, 'click', () => apply().catch(error => {
         iigLog('ERROR', 'Saving Prompt Model guidance failed:', error.message);
-        toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
+        toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
     }));
     bindIig(clearButton, 'click', async () => {
         applyButton.disabled = true;
@@ -2354,7 +2364,7 @@ async function openPromptModelGuidancePopup() {
             popup.complete(ctx.POPUP_RESULT.AFFIRMATIVE);
         } catch (error) {
             iigLog('ERROR', 'Clearing Prompt Model guidance failed:', error.message);
-            toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
+            toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
         } finally {
             applyButton.disabled = false;
             clearButton.disabled = false;
@@ -2365,7 +2375,7 @@ async function openPromptModelGuidancePopup() {
             event.preventDefault();
             return apply().catch(error => {
                 iigLog('ERROR', 'Saving Prompt Model guidance failed:', error.message);
-                toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
+                toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
             });
         }
     });
@@ -2397,7 +2407,7 @@ function initPromptModelGuidanceButton() {
     button.setAttribute('aria-haspopup', 'dialog');
     const openGuidance = () => openPromptModelGuidancePopup().catch(error => {
         iigLog('ERROR', 'Prompt Model guidance popup failed:', error.message);
-        toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
+        toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
     });
     bindIig(button, 'click', openGuidance);
     sendControls.insertBefore(button, sendButton);
@@ -2487,7 +2497,7 @@ async function openPromptModelImportPopup() {
             popup.complete(ctx.POPUP_RESULT.AFFIRMATIVE);
         } catch (error) {
             iigLog('ERROR', 'Prompt import failed:', error.message);
-            toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
+            toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
             importButton.disabled = false;
             importButton.classList.remove('busy');
         }
@@ -2514,7 +2524,7 @@ async function setPromptModelEnabled(enabled) {
             try {
                 resolvePromptModelGeminiConfig();
             } catch (error) {
-                toastr.warning(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
+                toastr.warning(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
                 refreshPromptModelUI();
                 return false;
             }
@@ -2550,7 +2560,7 @@ async function adoptActivePromptModelPrompt(dryRun) {
     }
     persistPromptModelState();
     refreshPromptModelUI();
-    toastr.info(sanitizeForHtml(pmT('adoptedToast', { name: active.name || active.identifier })), sanitizeForHtml(pmT('title')));
+    toastr.info(sanitizeForHtml(pmT('adoptedToast', { name: active.name || active.identifier })), sanitizeForHtml(pmT('title')), { escapeHtml: false });
 }
 
 const PROMPT_MODEL_CONTROLS = Object.freeze({
@@ -2614,10 +2624,19 @@ function populatePromptModelSelect(extraModels = [], open = false) {
 }
 
 async function refreshPromptModelCatalog() {
+    invalidateContextCache();
     const ctx = getContext();
     const oai = ctx?.chatCompletionSettings;
     if (!oai || ctx.mainApi !== 'openai') return;
     const button = document.getElementById('iig_pm_refresh_models');
+    const request = Symbol();
+    if (button) button._iigCatalogRequest = request;
+    const connection = JSON.stringify(oai);
+    const isCurrent = () => {
+        invalidateContextCache();
+        return !_iigDisposed && (!button || button.isConnected && button._iigCatalogRequest === request)
+            && getContext()?.mainApi === 'openai' && JSON.stringify(getContext()?.chatCompletionSettings) === connection;
+    };
     button?.classList.add('loading');
     try {
         const body = {
@@ -2648,18 +2667,20 @@ async function refreshPromptModelCatalog() {
             throw iigError(`Model status returned ${response.status}`, 'iig_pm_modelStatusError', { status: response.status });
         }
         const json = await response.json();
+        if (!isCurrent()) return;
         const catalog = Array.isArray(json?.data) ? json.data : [];
         const models = catalog.map(model => ({
             value: model?.id || model?.name || model,
             label: model?.name || model?.id || model,
         }));
         populatePromptModelSelect(models, models.length > 0);
-    } catch (error) {
-        iigLog('WARN', 'Prompt model catalog refresh failed:', error.message);
+    } catch {
+        if (!isCurrent()) return;
+        iigLog('WARN', 'Prompt model catalog refresh failed');
         populatePromptModelSelect();
-        toastr.warning(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
+        toastr.warning(sanitizeForHtml(pmT('catalogFailed')), sanitizeForHtml(pmT('title')), { escapeHtml: false });
     } finally {
-        button?.classList.remove('loading');
+        if (!_iigDisposed && button?._iigCatalogRequest === request) button.classList.remove('loading');
     }
 }
 
@@ -2736,20 +2757,40 @@ const _promptModelControllers = new Map();
 const _promptModelCaptureCache = new Map();
 const PROMPT_MODEL_CAPTURE_CACHE_LIMIT = 3;
 
-function cachePromptModelCapture(key, capture) {
+function cachePromptModelCapture(key, capture, messageId) {
     if (!key || !capture?.chat) return;
+    const context = getContext();
+    const message = context.chat?.[messageId];
+    if (!message) return;
+    const record = { capture: structuredClone(capture), message, messageId, chat: context.chat,
+        swipe: message.swipe_info?.[getMessageSwipeId(message)] };
     _promptModelCaptureCache.delete(key);
-    _promptModelCaptureCache.set(key, structuredClone(capture));
+    _promptModelCaptureCache.set(key, record);
     while (_promptModelCaptureCache.size > PROMPT_MODEL_CAPTURE_CACHE_LIMIT) {
         _promptModelCaptureCache.delete(_promptModelCaptureCache.keys().next().value);
     }
+    return record;
+}
+
+function getOwnedPromptModelCapture(cache, key) {
+    invalidateContextCache();
+    const record = cache.get(key);
+    const context = getContext();
+    if (!record || context.chat !== record.chat || context.chat[record.messageId] !== record.message
+        || buildProcessingKey(record.messageId) !== key
+        || record.message.swipe_info?.[getMessageSwipeId(record.message)] !== record.swipe) {
+        cache.delete(key);
+        return null;
+    }
+    return record.capture;
 }
 
 function getCachedPromptModelCapture(key) {
-    const cached = _promptModelCaptureCache.get(key);
+    const cached = getOwnedPromptModelCapture(_promptModelCaptureCache, key);
     if (!cached) return null;
+    const record = _promptModelCaptureCache.get(key);
     _promptModelCaptureCache.delete(key);
-    _promptModelCaptureCache.set(key, cached);
+    _promptModelCaptureCache.set(key, record);
     return {
         ...structuredClone(cached),
         guidance: getPromptModelGuidance(),
@@ -2785,8 +2826,8 @@ function bindPromptModelCapture(messageId, type) {
         ..._promptModelGeneration,
         type: String(type || _promptModelGeneration.type || 'normal'),
     };
-    _promptModelCaptures.set(key, capture);
-    cachePromptModelCapture(key, capture);
+    const record = cachePromptModelCapture(key, capture, messageId);
+    if (record) _promptModelCaptures.set(key, record);
     _promptModelGeneration = null;
     if (_promptModelCaptures.size > 30) _promptModelCaptures.delete(_promptModelCaptures.keys().next().value);
     return capture;
@@ -3146,14 +3187,16 @@ async function requestPromptModelBlock(messageId, narrative, capture, corrective
     }
 }
 
-function findTagOccurrenceIndex(source, fullMatch, occurrence) {
+function findTagOccurrenceIndex(source, fullMatch, occurrence, excludedRange = null) {
     const text = String(source || '');
+    if (!fullMatch) return -1;
     let from = 0;
-    for (let index = 0; index <= occurrence; index++) {
+    for (let index = 0; index <= occurrence;) {
         const found = text.indexOf(fullMatch, from);
         if (found < 0) return -1;
-        if (index === occurrence) return found;
         from = found + fullMatch.length;
+        if (excludedRange && found >= excludedRange.start && found < excludedRange.end) continue;
+        if (index++ === occurrence) return found;
     }
     return -1;
 }
@@ -3180,7 +3223,7 @@ function buildMainModelRerollMessages(cleanNarrative, capture, corrective = '') 
     return messages;
 }
 
-async function requestCurrentMainModelBlock(messages, requestSettings, model, controller) {
+async function requestCurrentMainModelBlock(messages, requestSettings, model, controller, assertCurrent = null) {
     throwIfSignalAborted(controller.signal);
     const ctx = getContext();
     const { generate_data: payload } = await waitIig(createGenerationParameters(
@@ -3190,6 +3233,7 @@ async function requestCurrentMainModelBlock(messages, requestSettings, model, co
         messages,
     ));
     throwIfSignalAborted(controller.signal);
+    assertCurrent?.();
     payload.stream = false;
     delete payload.n;
     const result = await waitIig(ctx.ChatCompletionService.processRequest(payload, {}, true, controller.signal));
@@ -3221,9 +3265,14 @@ async function validatePromptModelOutput(raw) {
 
 async function validateSinglePromptModelOutput(raw) {
     const validated = await validatePromptModelOutput(raw);
-    const tags = (await parseImageTags(validated, { forceAll: true }))
-        .filter(tag => tag.isNewFormat && tag.fullMatch.includes('[IMG:GEN]'));
-    if (tags.length !== 1) throw iigError('Response must contain exactly one pending IIG image block', 'iig_pm_singleBlockRequired');
+    const template = document.createElement('template');
+    template.innerHTML = validated;
+    const images = template.content.querySelectorAll('img');
+    const tags = await parseImageTags(validated, { forceAll: true });
+    if (images.length !== 1 || images[0].getAttribute('src') !== '[IMG:GEN]' || tags.length !== 1
+        || !tags[0].isNewFormat || !tags[0].fullMatch.includes('[IMG:GEN]')) {
+        throw iigError('Response must contain exactly one pending IIG image block', 'iig_pm_singleBlockRequired');
+    }
     return tags[0].fullMatch;
 }
 
@@ -3323,9 +3372,15 @@ function removePromptModelArtifacts(message) {
     return true;
 }
 
-function showPromptModelComposing(messageId, requestKey, replaceTarget = null) {
+function showPromptModelComposing(messageId, requestKey) {
     const text = document.querySelector(`#chat .mes[mesid="${messageId}"] .mes_text`);
     if (!text || text.querySelector('.iig-pm-composing')) return null;
+    const placeholder = createPromptModelComposing(() => abortPromptModelRequest(requestKey, 'user-cancel'));
+    text.appendChild(placeholder);
+    return placeholder;
+}
+
+function createPromptModelComposing(onStop) {
     const placeholder = document.createElement('div');
     placeholder.className = 'iig-pm-composing';
     placeholder.innerHTML = `<span class="iig-pm-spark">✦</span>`
@@ -3340,7 +3395,7 @@ function showPromptModelComposing(messageId, requestKey, replaceTarget = null) {
         placeholder._stopRequested = true;
         stopButton.disabled = true;
         stopButton.querySelector('span').textContent = pmT('stopping');
-        abortPromptModelRequest(requestKey, 'user-cancel');
+        onStop();
     });
     const startedAt = Date.now();
     const updateInterval = _lowPowerSlowUpdates() ? 5000 : 1000;
@@ -3353,8 +3408,6 @@ function showPromptModelComposing(messageId, requestKey, replaceTarget = null) {
         status.textContent = `${composingText} · ${minutes}:${seconds}`;
         if (elapsed >= timeoutSeconds) unregisterPlaceholderTick(placeholder);
     };
-    if (replaceTarget?.isConnected) replaceTarget.replaceWith(placeholder);
-    else text.appendChild(placeholder);
     updateElapsed();
     registerPlaceholderTick(placeholder, updateElapsed, updateInterval);
     return placeholder;
@@ -3382,7 +3435,7 @@ async function generatePromptModelSidecar(messageId, type, options = {}) {
     }
     const key = buildProcessingKey(messageId);
     const narrative = String(message.mes || '');
-    const capture = options.capture || _promptModelCaptures.get(key) || bindPromptModelCapture(messageId, type);
+    const capture = options.capture || getOwnedPromptModelCapture(_promptModelCaptures, key) || bindPromptModelCapture(messageId, type);
     const placeholder = showPromptModelComposing(messageId, key);
     const throwIfStopped = () => {
         throwIfSignalAborted();
@@ -3463,7 +3516,7 @@ async function generatePromptModelSidecar(messageId, type, options = {}) {
         await ctx.saveChat();
         sessionErrorCount++;
         updateSessionStats();
-        toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
+        toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
         return false;
     } finally {
         unregisterPlaceholderTick(placeholder);
@@ -3490,15 +3543,16 @@ async function retryPromptModelSidecar(messageId) {
     return generatePromptModelSidecar(messageId, 'normal', { retry: true, capture });
 }
 
-async function rerollNormalMessageImage(imgElement, resolvedSource = null) {
+async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
     if (_iigDisposed) return false;
     const resolved = resolvedSource || await resolveRenderedImageSource(imgElement);
     if (_iigDisposed) return false;
-    if (!resolved || resolved.tag.sourceKey !== 'mes') return false;
+    if (!resolved || !resolved.tag.isNewFormat) return false;
     const { messageId, message, tag, source } = resolved;
+    invalidateContextCache();
     const context = getContext();
-    const key = buildProcessingKey(messageId);
-    const capture = getCachedPromptModelCapture(key);
+    const scope = buildProcessingKey(messageId);
+    const capture = getCachedPromptModelCapture(scope);
     if (!capture?.chat) {
         toastr.warning(pmT('contextUnavailable'), pmT('title'));
         return false;
@@ -3508,146 +3562,264 @@ async function rerollNormalMessageImage(imgElement, resolvedSource = null) {
         return false;
     }
 
-    const wrapper = imgElement.closest('.iig-image-wrapper') || imgElement;
-    const sourceHint = sourceHintFromTag(tag);
-    const placeholder = showPromptModelComposing(messageId, key, wrapper);
-    if (!placeholder) return false;
-
-    abortPromptModelRequest(key);
-    const controller = new AbortController();
-    _promptModelControllers.set(key, controller);
-    const timeout = setIigTimeout(() => controller.abort('timeout'), PROMPT_MODEL_TIMEOUT_MS);
-    const requestSettings = structuredClone(context.chatCompletionSettings);
-    requestSettings.stream_openai = false;
-    requestSettings.n = 1;
-    requestSettings.request_images = false;
-    requestSettings.show_thoughts = false;
-    const model = getChatCompletionModel(requestSettings);
-    const sourceId = requestSettings.chat_completion_source;
-    const cleanNarrative = source.slice(0, tag.sourceIndex) + source.slice(tag.sourceIndex + tag.fullMatch.length);
+    const wrapper = imgElement.closest('.iig-image-wrapper');
+    const messageElement = imgElement.closest('.mes[mesid]');
+    if (!wrapper || !messageElement || wrapper._iigRewriteController || wrapper._iigRegenerateController) return false;
+    const wasHidden = wrapper.hidden;
+    const focusedControl = wrapper.contains(document.activeElement) ? document.activeElement : null;
+    const sidecar = tag.inSidecar === true;
     const swipeId = getMessageSwipeId(message);
-    const originalDisplay = message.extra?.display_text;
-    const originalSwipeDisplay = message.swipe_info?.[swipeId]?.extra?.display_text;
-    let sourceMutated = false;
-    let sourceReplaced = false;
-
-    const restoreOriginal = () => {
-        if (_iigDisposed || !placeholder.isConnected) return;
-        const restored = imgElement.cloneNode(true);
-        placeholder.replaceWith(wrapImageWithActions(restored, { sourceHint }));
-    };
-    const assertCurrent = (expectedSource = source) => {
+    const swipeInfo = message.swipe_info?.[swipeId];
+    const swipes = message.swipes;
+    const original = { mes: message.mes, display: message.extra?.display_text,
+        swipe: swipes?.[swipeId], swipeDisplay: swipeInfo?.extra?.display_text };
+    let expected = original;
+    const originalSrc = imgElement.getAttribute('src');
+    const originalInstruction = imgElement.getAttribute('data-iig-instruction');
+    const renderedImages = Array.from(messageElement.querySelectorAll('.mes_text img[data-iig-instruction]'));
+    const { controller, key } = beginGeneration(messageId, tag);
+    wrapper._iigRewriteController = controller;
+    const tagId = `iig-rewrite-${messageId}-${++_singleImageGenerationSerial}`;
+    tagAbortControllers.set(tagId, controller);
+    let timeout = null;
+    let placeholder = null;
+    let settingsSnapshot;
+    let completionSnapshot;
+    let guidance;
+    let phase = 'prompt';
+    const controls = Array.from(wrapper.querySelectorAll('.iig-action-regen, .iig-action-prompt-regen'))
+        .map(button => ({ button, disabled: button.disabled }));
+    const sameScope = () => {
+        invalidateContextCache();
         const current = getContext();
-        const currentSettings = current?.chatCompletionSettings;
-        const valid = !_iigDisposed && current?.mainApi === 'openai'
-            && current?.chat?.[messageId] === message
-            && buildProcessingKey(messageId) === key
-            && getMessageTagSource(message, 'mes') === expectedSource
-            && currentSettings?.chat_completion_source === sourceId
-            && getChatCompletionModel(currentSettings) === model
-            && _promptModelControllers.get(key) === controller
-            && !controller.signal.aborted;
+        return current?.chat === context.chat && current?.chat?.[messageId] === message
+            && current.characterId === context.characterId && current.groupId === context.groupId
+            && buildProcessingKey(messageId) === scope && message.swipes === swipes
+            && message.swipe_info?.[swipeId] === swipeInfo;
+    };
+    const assertCurrent = () => {
+        const scoped = sameScope();
+        const current = getContext();
+        const images = Array.from(messageElement.querySelectorAll('.mes_text img[data-iig-instruction]'));
+        const valid = scoped && !_iigDisposed && !controller.signal.aborted
+            && _inFlightGenerations.get(key) === controller && current?.mainApi === 'openai'
+            && getSettings().enabled && JSON.stringify(getSettings()) === settingsSnapshot
+            && JSON.stringify(current.chatCompletionSettings) === completionSnapshot
+            && getPromptModelGuidance() === guidance
+            && message.mes === expected.mes && message.extra?.display_text === expected.display
+            && swipes?.[swipeId] === expected.swipe && swipeInfo?.extra?.display_text === expected.swipeDisplay
+            && !_promptModelEditSessions.has(message) && !messageElement.querySelector('.mes_edit_textarea')
+            && imgElement.isConnected && imgElement.closest('.mes[mesid]') === messageElement
+            && messageElement.getAttribute('mesid') === String(messageId)
+            && imgElement.parentElement === wrapper && wrapper._iigRewriteController === controller
+            && imgElement.getAttribute('src') === originalSrc
+            && imgElement.getAttribute('data-iig-instruction') === originalInstruction
+            && images.length === renderedImages.length && images.every((img, index) => img === renderedImages[index]);
         if (valid) return;
         const error = iigError('Prompt reroll context changed', 'iig_pm_rerollContextChanged');
         error.name = 'AbortError';
         error.reason = controller.signal.reason || 'context-changed';
+        if (!controller.signal.aborted) controller.abort(error.reason);
         throw error;
     };
 
     try {
+        const pm = promptModelSettings();
+        if (sidecar && (!pm.enabled || !pm.snapshot.content || !isPromptModelAvailable())) {
+            throw iigError('Prompt Model request failed', 'iig_pm_requestFailed');
+        }
+        const gemini = sidecar && pm.connection === 'gemini' ? resolvePromptModelGeminiConfig() : null;
+        settingsSnapshot = JSON.stringify(getSettings());
+        completionSnapshot = JSON.stringify(context.chatCompletionSettings);
+        guidance = getPromptModelGuidance();
+        const requestSettings = structuredClone(context.chatCompletionSettings);
+        requestSettings.stream_openai = false;
+        requestSettings.n = 1;
+        requestSettings.request_images = false;
+        requestSettings.show_thoughts = false;
+        const model = gemini?.model || (sidecar ? pm.model : getChatCompletionModel(requestSettings));
         if (!model) throw iigError('No current Chat Completion model is selected', 'iig_pm_mainModelMissing');
-        let raw = await requestCurrentMainModelBlock(
-            buildMainModelRerollMessages(cleanNarrative, capture),
-            requestSettings,
-            model,
-            controller,
-        );
+        assertCurrent();
+        if (getMessageTagSource(message, tag.sourceKey) !== source
+            || source.slice(tag.sourceIndex, tag.sourceIndex + tag.fullMatch.length) !== tag.fullMatch) {
+            throw iigError('Selected image source changed before replacement', 'iig_pm_imageSourceChanged');
+        }
+        controls.forEach(({ button }) => { button.disabled = true; });
+        placeholder = createPromptModelComposing(() => abortGenerationForTag(tagId));
+        placeholder.dataset.tagId = tagId;
+        wrapper.after(placeholder);
+        wrapper.hidden = true;
+        if (focusedControl) placeholder.querySelector('.iig-pm-stop')?.focus({ preventScroll: true });
+        const setStatus = text => {
+            assertCurrent();
+            const status = placeholder.querySelector('.iig-status');
+            if (status) status.textContent = text;
+        };
+        timeout = setIigTimeout(() => controller.abort('timeout'), PROMPT_MODEL_TIMEOUT_MS);
+        const cleanNarrative = tag.sourceKey === 'mes'
+            ? source.slice(0, tag.sourceIndex) + source.slice(tag.sourceIndex + tag.fullMatch.length)
+            : String(message.mes || '');
+        const selected = `[Rewrite only this selected image instruction, preserving relevant reference names and configuration. Return exactly one pending image, not the surrounding block.]\n${JSON.stringify(parseInstructionObject(originalInstruction))}`;
+        const messages = sidecar
+            ? buildPromptModelMessages(messageId, cleanNarrative, capture, selected)
+            : buildMainModelRerollMessages(cleanNarrative, capture, selected);
+        const request = () => {
+            assertCurrent();
+            return gemini ? requestPromptModelGemini(messages, gemini, controller.signal)
+                : requestCurrentMainModelBlock(messages, requestSettings, model, controller, assertCurrent);
+        };
+        let raw = await request();
         assertCurrent();
         let block;
         try {
             block = await validateSinglePromptModelOutput(raw);
         } catch (firstError) {
             assertCurrent();
-            iigLog('WARN', `Main-model reroll output invalid; retrying: ${firstError.message}; ${promptModelResponseShape(raw)}`);
-            raw = await requestCurrentMainModelBlock(
-                buildMainModelRerollMessages(
-                    cleanNarrative,
-                    capture,
-                    '[Correction: return exactly one valid HTML image block with brace-parseable instruction JSON and src="[IMG:GEN]".]',
-                ),
-                requestSettings,
-                model,
-                controller,
-            );
+            if (typeof globalThis.DOMPurify?.sanitize !== 'function') throw firstError;
+            messages[messages.length - 1].content += '\n[Correction: return exactly one valid HTML image block with brace-parseable instruction JSON and src="[IMG:GEN]".]';
+            raw = await request();
             assertCurrent();
             block = await validateSinglePromptModelOutput(raw);
         }
         assertCurrent();
-        if (!replaceExactTagInMessageSource(message, tag, source, block)) {
-            throw iigError('Selected image source changed before replacement', 'iig_pm_imageSourceChanged');
-        }
-        sourceMutated = true;
-        const replacementSource = String(message.mes || '');
-        const replacementTarget = {
-            sourceKey: 'mes',
-            sourceIndex: tag.sourceIndex,
-            fullMatch: block,
-            renderedIndex: resolved.renderedIndex,
-        };
-        recentlyProcessed.delete(key);
-        context.updateMessageBlock(messageId, message);
-        await context.saveChat();
-        assertCurrent(replacementSource);
-        const accepted = await processMessageTags(messageId, {
-            force: true,
-            target: replacementTarget,
-            canAccept: () => {
-                try { assertCurrent(replacementSource); return true; } catch (_) { return false; }
-            },
-            onAccepted: () => {
-                sourceReplaced = true;
-                clearIigTimeout(timeout);
-                if (_promptModelControllers.get(key) === controller) _promptModelControllers.delete(key);
-            },
+        clearIigTimeout(timeout);
+        timeout = null;
+        const [replacementTag] = await parseImageTags(block, { forceAll: true });
+        assertCurrent();
+        const instruction = getInstructionAttributeValue(replacementTag);
+        const data = parseInstructionObject(instruction);
+        phase = 'image';
+        const focusProgress = placeholder.contains(document.activeElement);
+        unregisterPlaceholderTick(placeholder);
+        placeholder.remove();
+        placeholder = createLoadingPlaceholder(tagId);
+        wrapper.after(placeholder);
+        if (focusProgress) placeholder.querySelector('.iig-stop-btn')?.focus({ preventScroll: true });
+        const dataUrl = await generateImageWithRetry(data.prompt, data.style || '', setStatus, {
+            aspectRatio: data.aspect_ratio || data.aspectRatio || null,
+            imageSize: data.image_size || data.imageSize || null,
+            quality: data.quality || null, preset: data.preset || null, signal: controller.signal,
         });
-        if (!accepted) {
-            assertCurrent(replacementSource);
-            throw iigError('Image generation could not accept the replacement tag', 'iig_pm_replacementRejected');
-        }
+        assertCurrent();
+        setStatus(iigT('iig_saving'));
+        const imagePath = await saveImageToFile(dataUrl, controller.signal);
+        assertCurrent();
+        if (!safeMediaUrlOrNull(imagePath)) throw new Error('Invalid saved image path');
+        // Persist only a canonical image, never model-authored event attributes or surrounding HTML.
+        const replacement = `<img data-iig-instruction='${sanitizeForSingleQuotedAttribute(JSON.stringify(data))}' src="${escapeAttr(imagePath)}">`;
+        phase = 'save';
+        await queueSingleImageCommit(message, async () => {
+            assertCurrent();
+            const writes = [];
+            const write = (owner, field, value, owns) => {
+                if (writes.some(entry => entry.owner === owner && entry.field === field)) return;
+                writes.push({ owner, field, value, before: owner[field], had: Object.hasOwn(owner, field), owns });
+            };
+            const splice = (text, index) => text.slice(0, index) + replacement + text.slice(index + tag.fullMatch.length);
+            let display = original.display;
+            if (tag.sourceKey === 'mes') {
+                const mes = splice(source, tag.sourceIndex);
+                write(message, 'mes', mes, () => true);
+                if (Array.isArray(swipes) && typeof original.swipe === 'string') {
+                    if (original.swipe !== original.mes) throw iigError('Selected image source changed before replacement', 'iig_pm_imageSourceChanged');
+                    write(swipes, swipeId, mes, () => message.swipes === swipes);
+                }
+                if (typeof display === 'string') {
+                    const index = findTagOccurrenceIndex(display, tag.fullMatch, tag.occurrence, findPromptModelSidecarRange(display));
+                    if (index >= 0) display = splice(display, index);
+                }
+            } else {
+                display = splice(source, tag.sourceIndex);
+            }
+            if (display !== original.display) {
+                const extra = message.extra;
+                write(extra, 'display_text', display, () => message.extra === extra);
+                if (swipeInfo) {
+                    if (original.swipeDisplay !== undefined && original.swipeDisplay !== original.display) {
+                        throw iigError('Selected image source changed before replacement', 'iig_pm_imageSourceChanged');
+                    }
+                    if (!swipeInfo.extra) swipeInfo.extra = {};
+                    const extra = swipeInfo.extra;
+                    write(extra, 'display_text', display, () => swipeInfo.extra === extra);
+                }
+            }
+            // The host save cannot be canceled. Stop applies until this synchronous commit boundary.
+            const stop = placeholder.querySelector('.iig-stop-btn');
+            if (stop) stop.disabled = true;
+            tagAbortControllers.delete(tagId);
+            for (const entry of writes) entry.owner[entry.field] = entry.value;
+            expected = { mes: message.mes, display: message.extra?.display_text,
+                swipe: swipes?.[swipeId], swipeDisplay: swipeInfo?.extra?.display_text };
+            try {
+                await context.saveChat();
+            } catch (_) {
+                // A rejected save can only undo our still-owned values, never a later edit or swipe.
+                let restored = false;
+                if (!_iigDisposed && sameScope()) for (const entry of writes) {
+                    if (!entry.owns() || entry.owner[entry.field] !== entry.value) continue;
+                    if (entry.had) entry.owner[entry.field] = entry.before;
+                    else delete entry.owner[entry.field];
+                    restored = true;
+                }
+                if (restored && !_iigDisposed && sameScope()) {
+                    try { await context.saveChat(); }
+                    catch (_) { iigLog('ERROR', 'Selected image recovery save failed'); }
+                }
+                throw iigError('Chat save failed', 'iig_chatSaveFailed');
+            }
+        });
+        assertCurrent();
+        const newImg = document.createElement('img');
+        newImg.className = 'iig-generated-image';
+        newImg.src = imagePath;
+        newImg.alt = data.prompt;
+        newImg.title = iigT('iig_imageDetails', { style: data.style || '', prompt: data.prompt });
+        newImg.setAttribute('data-iig-instruction', JSON.stringify(data));
+        const focusReplacement = placeholder.contains(document.activeElement);
+        const newWrapper = wrapImageWithActions(newImg);
+        wrapper.replaceWith(newWrapper);
+        if (focusReplacement) newWrapper.querySelector('.iig-action-prompt-regen')?.focus({ preventScroll: true });
+        sessionGenCount++;
+        updateSessionStats();
+        playDesktopCompletionSound();
+        toastr.success(sanitizeForHtml(iigT('iig_imageRegenerated')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
         return true;
     } catch (error) {
-        const aborted = error?.name === 'AbortError' || controller.signal.aborted || /abort/i.test(error?.message || '');
-        if (sourceMutated && !sourceReplaced) {
-            message.mes = source;
-            if (Array.isArray(message.swipes) && typeof message.swipes[swipeId] === 'string') message.swipes[swipeId] = source;
-            if (originalDisplay === undefined) delete message.extra?.display_text;
-            else writePromptModelDisplayText(message, originalDisplay);
-            const swipeExtra = message.swipe_info?.[swipeId]?.extra;
-            if (swipeExtra) {
-                if (originalSwipeDisplay === undefined) delete swipeExtra.display_text;
-                else swipeExtra.display_text = originalSwipeDisplay;
-            }
-            if (getContext()?.chat?.[messageId] === message && buildProcessingKey(messageId) === key) {
-                if (!_iigDisposed) context.updateMessageBlock(messageId, message);
-                try { await context.saveChat(); }
-                catch (rollbackError) { iigLog('ERROR', 'Prompt reroll rollback save failed:', rollbackError.message); }
-            }
-        }
-        if (!sourceReplaced) restoreOriginal();
-        if (aborted && controller.signal.reason !== 'timeout') {
+        if (_iigDisposed || !sameScope()) return false;
+        if ((error?.name === 'AbortError' || controller.signal.aborted) && controller.signal.reason !== 'timeout') {
             if (controller.signal.reason === 'user-cancel') {
                 toastr.info(pmT('stopped'), pmT('title'), { timeOut: 2000 });
             }
             return false;
         }
-        iigLog('ERROR', 'Main-model prompt reroll failed:', error.message);
-        toastr.error(sanitizeForHtml(controller.signal.reason === 'timeout' ? pmT('requestTimedOut') : iigErrorText(error)), sanitizeForHtml(pmT('title')));
+        const template = typeof error?.i18n === 'string' && error.i18n.startsWith('iig_pm_')
+            && PROMPT_MODEL_I18N.en[error.i18n.slice(7)];
+        const text = controller.signal.reason === 'timeout' ? pmT('requestTimedOut')
+            : phase === 'save' ? iigT('iig_chatSaveFailed')
+                : typeof template === 'string' && (error.iigPromptModelRedacted === true || !template.includes('{'))
+                    ? iigErrorText(error) : pmT('requestFailed');
+        iigLog('ERROR', 'Selected image rewrite failed:', text);
+        toastr.error(sanitizeForHtml(text), sanitizeForHtml(pmT('title')), { escapeHtml: false });
         return false;
     } finally {
+        const restoreFocus = placeholder?.contains(document.activeElement);
         clearIigTimeout(timeout);
         unregisterPlaceholderTick(placeholder);
-        if (!sourceReplaced) placeholder.remove();
-        if (_promptModelControllers.get(key) === controller) _promptModelControllers.delete(key);
+        placeholder?.remove();
+        if (wrapper._iigRewriteController === controller) {
+            delete wrapper._iigRewriteController;
+            if (!_iigDisposed) {
+                wrapper.hidden = wasHidden;
+                controls.forEach(({ button, disabled }) => { if (button.isConnected) button.disabled = disabled; });
+                if (restoreFocus && focusedControl?.isConnected) {
+                    // The delegated sparkle handler disables its button before resolving the source.
+                    if (focusedControl.dataset.iigPmReroll === '1') focusedControl.disabled = false;
+                    focusedControl.focus({ preventScroll: true });
+                }
+            }
+        }
+        tagAbortControllers.delete(tagId);
+        endGeneration(key, controller);
     }
 }
 
@@ -3701,7 +3873,7 @@ function promptModelSidecarInnerHtml(wrapper) {
     return text.slice(openingEnd + 1, closingStart);
 }
 
-function canonicalizeEditedPromptModelInstructions(source) {
+function canonicalizeEditedPromptModelInstructions(source, replacements = null) {
     const text = String(source || '');
     const attributeStart = /data-iig-instruction\s*=\s*(["'])/gi;
     let output = '';
@@ -3729,31 +3901,18 @@ function canonicalizeEditedPromptModelInstructions(source) {
             return output;
         }
 
-        output += `${match[0].slice(0, -1)}'${sanitizeForSingleQuotedAttribute(JSON.stringify(instruction))}'`;
+        const replacement = `${match[0].slice(0, -1)}'${sanitizeForSingleQuotedAttribute(JSON.stringify(instruction))}'`;
+        output += replacement;
         cursor = valueEnd + 1;
+        replacements?.push({ end: cursor, delta: replacement.length - (cursor - match.index) });
         attributeStart.lastIndex = cursor;
     }
 
     return output + text.slice(cursor);
 }
 
-/**
- * Run edited sidecar HTML through DOMPurify.
- *
- * The generation path is gated by validatePromptModelOutput, but the message
- * EDIT path re-enters the same HTML from a textarea and lands in message.mes /
- * message.extra.display_text — a persisted sink, re-parsed on every reload.
- *
- * ORDER MATTERS: callers must sanitize BEFORE canonicalizing. DOMPurify
- * re-serializes attributes double-quoted, turning data-iig-instruction='{"a":1}'
- * into "{&quot;a&quot;:1}". parseImageTags brace-scans raw text and toggles its
- * string state on a literal `"`, so &quot; makes every brace read as structure
- * and truncates the payload. Canonicalizing afterwards
- * re-emits the single-quoted, entity-free form and heals it.
- *
- * Fails closed, matching validatePromptModelOutput: if DOMPurify is missing we
- * throw rather than write unsanitized HTML to the chat file.
- */
+/** Repair edited JSON quoting before HTML parsing; canonicalize sanitized output
+ * afterward so the brace scanner receives literal JSON double quotes. */
 function sanitizeSidecarHtml(html) {
     if (typeof globalThis.DOMPurify?.sanitize !== 'function') {
         throw iigError('DOMPurify is unavailable; edited sidecar cannot be safely processed', 'iig_pm_editSanitizerUnavailable');
@@ -3774,24 +3933,34 @@ function splitPromptModelEditableSource(source) {
         let narrative = text.slice(0, markerIndex);
         if (narrative.endsWith('\n\n')) narrative = narrative.slice(0, -2);
         const inner = text.slice(markerIndex + PROMPT_MODEL_EDIT_MARKER.length).replace(/^\r?\n/, '').trim();
-        // Sanitize first, canonicalize second — see sanitizeSidecarHtml.
-        const canonicalInner = canonicalizeEditedPromptModelInstructions(sanitizeSidecarHtml(inner));
+        const canonicalInner = canonicalizeEditedPromptModelInstructions(
+            sanitizeSidecarHtml(canonicalizeEditedPromptModelInstructions(inner)));
         const sidecar = canonicalInner
             ? `<div class="iig-sidecar" data-iig-sidecar="1">${canonicalInner}</div>`
             : '';
         return { narrative, sidecar };
     }
-    const range = findPromptModelSidecarRange(text);
+    const replacements = [];
+    const repaired = canonicalizeEditedPromptModelInstructions(text, replacements);
+    const range = findPromptModelSidecarRange(repaired);
     if (!range) {
         const narrative = text.endsWith('\n\n') ? text.slice(0, -2) : text;
         return { narrative, sidecar: '' };
     }
-    let before = text.slice(0, range.start);
+    // Map repaired HTML offsets back to the untouched surrounding narrative.
+    const originalOffset = offset => {
+        let delta = 0;
+        for (const replacement of replacements) {
+            if (replacement.end + delta + replacement.delta > offset) break;
+            delta += replacement.delta;
+        }
+        return offset - delta;
+    };
+    let before = text.slice(0, originalOffset(range.start));
     if (before.endsWith('\n\n')) before = before.slice(0, -2);
-    const narrative = `${before}${text.slice(range.end)}`;
-    // Same order as the marker branch above: sanitize, then canonicalize.
+    const narrative = `${before}${text.slice(originalOffset(range.end))}`;
     const sidecar = canonicalizePromptModelInstructionAttributes(
-        sanitizeSidecarHtml(text.slice(range.start, range.end).trim())
+        sanitizeSidecarHtml(repaired.slice(range.start, range.end).trim())
     );
     return { narrative, sidecar };
 }
@@ -3809,24 +3978,38 @@ function promptModelEditableSource(message) {
     return `${narrative}${narrative ? '\n\n' : ''}${PROMPT_MODEL_EDIT_MARKER}\n${inner}`;
 }
 
-function reconcilePromptModelEdit(message, source) {
+function isPromptModelEditSessionCurrent(message) {
     const session = _promptModelEditSessions.get(message);
-    if (!message || !session) return false;
+    if (_iigDisposed || !message || !session) return false;
+    invalidateContextCache();
+    const context = getContext();
+    return context.chat === session.chat && context.chatId === session.chatId && context.chat.includes(message)
+        && getMessageSwipeId(message) === session.swipeId
+        && (!session.swipe || message.swipe_info?.[session.swipeId] === session.swipe);
+}
 
-    // Fail closed: if the sidecar cannot be sanitized, abort BEFORE touching
-    // message.mes or display_text. Leaving the edit un-reconciled is better
-    // than a half-applied write or a silently discarded sidecar.
+function reconcilePromptModelEdit(message, source) {
+    if (!isPromptModelEditSessionCurrent(message)) return false;
+    const session = _promptModelEditSessions.get(message);
+
     let split;
     try {
         split = splitPromptModelEditableSource(source);
     } catch (e) {
+        // The host writes the draft before MESSAGE_EDITED. Keep that failed draft in the editor only.
+        if (message.mes === source) message.mes = session.narrative;
+        if (message.swipes?.[session.swipeId] === source) message.swipes[session.swipeId] = session.narrative;
         iigLog('ERROR', `Prompt Model edit not applied — ${e.message}`);
         toastr.error(pmT('editFailed'), iigT('iig_title'));
         return false;
     }
-    const { narrative, sidecar } = split;
+    writePromptModelEditedSource(message, split, session.swipeId);
+    session.narrative = split.narrative;
+    return true;
+}
+
+function writePromptModelEditedSource(message, { narrative, sidecar }, swipeId = getMessageSwipeId(message)) {
     message.mes = narrative;
-    const swipeId = Number.isInteger(session.swipeId) ? session.swipeId : getMessageSwipeId(message);
     if (Array.isArray(message.swipes) && swipeId < message.swipes.length) {
         message.swipes[swipeId] = narrative;
     }
@@ -3842,13 +4025,61 @@ function reconcilePromptModelEdit(message, source) {
         if (displayText) swipeInfo.extra.display_text = displayText;
         else delete swipeInfo.extra.display_text;
     }
-    return true;
+}
+
+async function copyPromptModelEditedMessage(button, textarea, message) {
+    if (_iigDisposed || button.disabled || !isPromptModelEditSessionCurrent(message)) return;
+    invalidateContextCache();
+    const context = getContext();
+    const id = context.chat.indexOf(message);
+    const scope = buildProcessingKey(id);
+    const swipe = message.swipe_info?.[getMessageSwipeId(message)];
+    const draft = textarea.value;
+    const mes = message.mes, display = message.extra?.display_text;
+    button.disabled = true;
+    try {
+        if (!await showIigConfirm(sanitizeForHtml(pmT('title')), sanitizeForHtml(pmT('copyConfirm')))) return;
+        if (!isMessageImageScopeCurrent(context, message, id, scope) || !isPromptModelEditSessionCurrent(message) || !textarea.isConnected
+            || textarea.closest('.mes[mesid]')?.getAttribute('mesid') !== String(id)
+            || textarea.value !== draft || message.mes !== mes || message.extra?.display_text !== display
+            || message.swipe_info?.[getMessageSwipeId(message)] !== swipe) return;
+        const split = splitPromptModelEditableSource(draft);
+        if (context.powerUserSettings?.trim_spaces) split.narrative = split.narrative.trim();
+        const clone = structuredClone(message);
+        clone.send_date = Date.now();
+        writePromptModelEditedSource(clone, split);
+        context.chat.splice(id + 1, 0, clone);
+        context.addOneMessage(clone, { insertAfter: id, scroll: false });
+        updateViewMessageIds();
+        scheduleWrapPass();
+        await context.saveChat();
+    } catch (_) {
+        if (!_iigDisposed && isMessageImageScopeCurrent(context, message, id, scope)) {
+            iigLog('ERROR', 'Prompt Model message copy failed');
+            toastr.error(pmT('copyFailed'), iigT('iig_title'));
+        }
+    } finally {
+        if (!_iigDisposed && button.isConnected) button.disabled = false;
+    }
 }
 
 function initPromptModelEditBridge() {
     if (_iigDisposed || _promptModelEditBridgeReady) return;
     _promptModelEditBridgeReady = true;
     const ctx = getContext();
+
+    listenIig(document, 'click', event => {
+        const button = event.target.closest('.mes_edit_copy');
+        const element = button?.closest('.mes[mesid]');
+        const textarea = element?.querySelector('#curEditTextarea');
+        if (!(textarea instanceof HTMLTextAreaElement) || textarea.dataset.iigPromptModelEdit !== '1') return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        invalidateContextCache();
+        const message = getContext()?.chat?.[Number(element.getAttribute('mesid'))];
+        if (!message || !_promptModelEditSessions.has(message)) return;
+        return copyPromptModelEditedMessage(button, textarea, message);
+    }, true);
 
     listenIig(document, 'click', event => {
         const button = event.target.closest('.mes_edit');
@@ -3860,8 +4091,11 @@ function initPromptModelEditBridge() {
         const message = getContext()?.chat?.[messageId];
         const editable = promptModelEditableSource(message);
         if (!Number.isInteger(messageId) || !editable) return;
+        const swipeId = getMessageSwipeId(message);
         const injectWhenReady = () => {
-            if (_iigDisposed || !messageElement.isConnected || !getContext()?.chat?.includes(message)) {
+            invalidateContextCache();
+            if (_iigDisposed || !messageElement.isConnected || getContext()?.chat?.[messageId] !== message
+                || getMessageSwipeId(message) !== swipeId) {
                 _promptModelEditObserver?.disconnect();
                 _promptModelEditObserver = null;
                 return;
@@ -3870,7 +4104,9 @@ function initPromptModelEditBridge() {
             if (!(textarea instanceof HTMLTextAreaElement)) return;
             _promptModelEditObserver?.disconnect();
             _promptModelEditObserver = null;
-            _promptModelEditSessions.set(message, { swipeId: getMessageSwipeId(message) });
+            const current = getContext();
+            _promptModelEditSessions.set(message, { swipeId, swipe: message.swipe_info?.[swipeId],
+                chat: current.chat, chatId: current.chatId, narrative: message.mes });
             textarea.value = editable;
             textarea.dataset.iigPromptModelEdit = '1';
             textarea.style.height = '';
@@ -4054,13 +4290,13 @@ function restoreRefsFromLocalStorage() {
         const backupHasData = backupRefs.some(r => r && (r.name || r.imageBase64 || r.imagePath || r.imageData));
         const currentTs = Number(settings.refsUpdatedAt) || 0;
 
-        // Restore if current is empty, OR backup is strictly newer.
+        // An empty timestamped state is an intentional deletion.
         let shouldRestore = false;
         let reason = '';
-        if (!currentHasData && backupHasData) {
+        if (!currentHasData && backupHasData && !currentTs) {
             shouldRestore = true;
             reason = 'server state empty, backup has data';
-        } else if (backupHasData && backupTs > currentTs) {
+        } else if (backupTs > currentTs) {
             shouldRestore = true;
             reason = `backup newer (${backupTs} > ${currentTs})`;
         } else {
@@ -4086,7 +4322,7 @@ function initMobileSaveListeners() {
         flushPendingRefsPersist();
         try { trackIigTask(Promise.resolve(SillyTavern.getContext().saveSettingsDebounced()).catch(reportFailure)); }
         catch (error) { reportFailure(error); }
-        // Use the captured ST ref — window.saveSettings is shadowed by ours and would recurse.
+        // Use the optional immediate host hook when available.
         if (typeof _stSaveSettings === 'function' && _stSaveSettings !== saveSettings) {
             try { trackIigTask(Promise.resolve(_stSaveSettings()).catch(reportFailure)); }
             catch (error) { reportFailure(error); }
@@ -4350,6 +4586,7 @@ function saveActiveRefs(scopeState) {
         if (scopeState.storageScope === 'per-character') scopeState.container.updatedAt = Date.now();
         saveSettings();
     }
+    updateRefScopeUI();
 }
 
 // Escape a string for safe insertion into a RegExp.
@@ -4399,13 +4636,8 @@ function nameMatchesPrompt(nameField, promptText) {
         // Boundary-delimited pattern; multi-word aliases tolerate variable spacing.
         const words = alias.split(/\s+/).filter(Boolean).map(escapeRegExp);
         if (words.length === 0) continue;
-        const pattern = `(?<![\\w])${words.join('\\s+')}(?![\\w])`;
-        try {
-            if (new RegExp(pattern, 'i').test(promptText)) return true;
-        } catch (_) {
-            // Fallback: plain case-insensitive substring test.
-            if (promptText.toLowerCase().includes(alias.toLowerCase())) return true;
-        }
+        const pattern = `(?<![\\p{L}\\p{M}\\p{N}_])${words.join('\\s+')}(?![\\p{L}\\p{M}\\p{N}_])`;
+        if (new RegExp(pattern, 'iu').test(promptText)) return true;
     }
     return false;
 }
@@ -4419,7 +4651,7 @@ function matchNpcReferences(prompt, npcList) {
     for (const npc of npcList) {
         if (!npc || !npc.name || (!npc.imagePath && !npc.imageBase64 && !npc.imageData)) continue;
         if (nameMatchesPrompt(npc.name, prompt)) {
-            matched.push({ name: npc.name, imageBase64: npc.imageBase64, imagePath: npc.imagePath });
+            matched.push({ name: npc.name, imageBase64: npc.imageBase64, imagePath: npc.imagePath, imageData: npc.imageData });
         }
     }
 
@@ -4462,8 +4694,7 @@ function refMatchesPrompt(ref, promptText, fallbackName) {
  * naistera -> dropdown (no list).
  * Auth is Bearer; x-goog-api-key only on *.googleapis.com.
  */
-async function fetchModels() {
-    const settings = getSettings();
+async function fetchModels(settings = { ...getSettings() }) {
 
     if (settings.apiType === 'naistera') {
         iigLog('INFO', 'fetchModels skipped for Naistera (uses dropdown)');
@@ -4473,6 +4704,8 @@ async function fetchModels() {
     const endpoint = getEffectiveEndpoint(settings);
     if (!endpoint) throw iigError('Set endpoint first', 'iig_ui_setEndpointFirst');
     if (!settings.apiKey) throw iigError('Set API key first', 'iig_ui_setApiKeyFirst');
+    const endpointError = validateEndpointShape(endpoint);
+    if (endpointError) throw iigError(endpointError, endpointError.startsWith('Use a base endpoint') ? 'iig_endpointBaseOnly' : 'iig_endpointInvalid', { endpoint });
 
     const sendGoogleHeader = (settings.apiType === 'gemini') && endpointNeedsGoogleHeader(endpoint);
     const headers = sendGoogleHeader
@@ -4481,9 +4714,7 @@ async function fetchModels() {
 
     // Try aggregator, Google-native, then /compatible model-list paths.
     const candidateUrls = [];
-    if (settings.pathOverride) {
-        candidateUrls.push(buildApiUrl(settings, '/v1/models'));
-    } else if (settings.apiType === 'gemini') {
+    if (settings.apiType === 'gemini') {
         candidateUrls.push(`${endpoint}/v1/models`);
         candidateUrls.push(`${endpoint}/v1beta/models`);
         if (!endpointHasCompatiblePrefix(endpoint)) {
@@ -4534,8 +4765,8 @@ async function fetchModels() {
             }
             return filtered;
         } catch (error) {
-            lastError = error;
-            iigLog('WARN', `fetchModels: ${url} threw — ${error.message}`);
+            lastError = redactSensitive(error, value => redactPromptModelGeminiError(value, settings.apiKey));
+            iigLog('WARN', `fetchModels: ${url} threw — ${lastError.message}`);
         }
     }
 
@@ -4546,6 +4777,15 @@ async function fetchModels() {
 
 const MODEL_PICKER_LIMIT = 200;
 const _modelCatalogs = new Map();
+
+function invalidateImageModelCatalog() {
+    const button = document.getElementById('iig_refresh_models');
+    if (button) {
+        button._iigCatalogRequest = Symbol();
+        button.classList.remove('loading');
+    }
+    updateModelCatalog('iig_model', []);
+}
 
 function getModelPicker(inputId) {
     const input = document.getElementById(inputId);
@@ -4837,6 +5077,8 @@ function sanitizeUploadFolderName(name) {
 async function saveImageToFile(dataUrl, signal = null) {
     const context = getContext();
     throwIfSignalAborted(signal);
+    if (/^https?:\/\//i.test(dataUrl)) dataUrl = await downloadGeneratedImageData(dataUrl, signal);
+    throwIfSignalAborted(signal);
 
     const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
     if (!match) {
@@ -4880,6 +5122,41 @@ async function saveImageToFile(dataUrl, signal = null) {
     return result.path;
 }
 
+async function downloadGeneratedImageData(url, signal) {
+    const parsed = new URL(url);
+    if (!/^https?:$/.test(parsed.protocol) || !safeMediaUrlOrNull(url) || parsed.username || parsed.password) throw iigError('Invalid image URL', 'iig_imageUrlInvalid');
+    const response = await fetchWithTimeout(url, { signal, credentials: 'omit', referrerPolicy: 'no-referrer' }, 120000);
+    try {
+        if (!response.ok) throw iigError(`Image request failed (${response.status})`, 'iig_imageRequestFailed', { status: response.status });
+        const limit = 32 * 1024 * 1024;
+        if (Number(response.headers.get('content-length')) > limit || !response.body?.getReader) throw iigError('Image download exceeds supported limits', 'iig_imageDownloadLimit');
+        const reader = response.body.getReader();
+        const chunks = [];
+        let bytes = 0;
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                throwIfSignalAborted(signal);
+                if (done) break;
+                bytes += value.byteLength;
+                if (bytes > limit) throw iigError('Image download exceeds supported limits', 'iig_imageDownloadLimit');
+                chunks.push(value);
+            }
+        } finally { reader.releaseLock(); }
+        const blob = new Blob(chunks);
+        const type = await sniffImageType(blob);
+        throwIfSignalAborted(signal);
+        if (!type) throw iigError('Unexpected download type: unknown', 'iig_downloadTypeInvalid', { type: 'unknown' });
+        const encoded = await readIigBase64(new Blob(chunks, { type }));
+        throwIfSignalAborted(signal);
+        return `data:${type};base64,${encoded}`;
+    } catch (error) {
+        throwIfSignalAborted(signal);
+        if (error?.name === 'AbortError') throw iigError('Image download timed out', 'iig_timeout');
+        throw error;
+    } finally { response.iigDiscard?.(); }
+}
+
 // Upload a ref image to ST and return its public path (we store the path, not
 // base64, to keep settings.json small).
 async function saveRefImageToFile(base64Data, label, filenameOverride = null) {
@@ -4889,7 +5166,7 @@ async function saveRefImageToFile(base64Data, label, filenameOverride = null) {
         filename = filenameOverride;
     } else {
         const safeName = label.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
-        filename = `iig_ref_${safeName}_${Date.now()}`;
+        filename = await pickUniqueRefFilename(safeName, '');
     }
     const response = await fetchWithTimeout('/api/images/upload', {
         method: 'POST',
@@ -4924,8 +5201,7 @@ function sanitizeRefNameForFilename(name) {
         .substring(0, 40);
 }
 
-// List the iig_refs folder. Naming callers degrade to []; destructive or
-// reporting callers use strict mode so a failed request is never called empty.
+// Destructive/reporting callers use strict mode so failure is never called empty.
 async function listIigRefsFolder({ strict = false } = {}) {
     try {
         const context = getContext();
@@ -5032,22 +5308,12 @@ function markRefStorageUsageStale() {
     delete status.dataset.measured;
 }
 
-// Collision-free filename base (iig_ref_<type>_<slug>, +_2/_3 on collision).
-// excludePath lets rename ignore its own current file.
-async function pickUniqueRefFilename(refType, nameSlug, excludePath = '') {
-    const existing = await listIigRefsFolder();
-    const excludeFilename = excludePath ? (excludePath.split('/').pop() || '') : '';
-    const existingSet = new Set(
-        existing.filter(n => n && n !== excludeFilename)
-    );
-
-    const base = `iig_ref_${refType}_${nameSlug}`;
-    if (!existingSet.has(`${base}.jpeg`)) return base;
-    for (let i = 2; i < 100; i++) {
-        const candidate = `${base}_${i}`;
-        if (!existingSet.has(`${candidate}.jpeg`)) return candidate;
-    }
-    return `${base}_${Date.now()}`; // unlikely fallback
+// Directory listing cannot reserve a name against concurrent uploads.
+async function pickUniqueRefFilename(refType, nameSlug) {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const suffix = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    const base = [refType, nameSlug].filter(Boolean).join('_').replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `iig_ref_${base}_u${suffix}`;
 }
 
 // Delete a ref file on the ST server. Refuses paths outside /iig_refs/ (guards
@@ -5204,8 +5470,7 @@ function base64ToImageBlob(src) {
 // =========================================================================
 
 // POST to an OpenAI-compatible image route. GPT Image edits use multipart files.
-async function generateImageOpenAI(prompt, style, referenceImages = [], options = {}) {
-    const settings = getSettings();
+async function generateImageOpenAI(prompt, style, referenceImages = [], options = {}, settings = { ...getSettings() }) {
     const novelAiModel = isRoutMyNovelAiModel(settings.model);
     if (novelAiModel && referenceImages.length > 1) {
         throw new Error('NovelAI accepts exactly one reference image; adjust reference name matching or Always send settings');
@@ -5265,11 +5530,11 @@ async function generateImageOpenAI(prompt, style, referenceImages = [], options 
     }
 
     // Map 1K/2K/4K -> quality (gpt-image uses low/medium/high/auto; dall-e-3 standard/hd).
-    const tagImageSize = options.imageSize || settings.imageSize || null;
+    const tagImageSize = options.imageSize || null;
     const modelLower = String(settings.model || '').toLowerCase();
     const modelIsDallE3 = /dall-e-3\b/.test(modelLower);
     let quality = options.quality || settings.quality;
-    if (tagImageSize && !novelAiModel) {
+    if (tagImageSize && !options.quality && !novelAiModel) {
         if (modelIsDallE3) {
             quality = (tagImageSize === '1K') ? 'standard' : 'hd';
         } else {
@@ -5399,8 +5664,7 @@ function noteCompatiblePathOnce(base) {
 
 // POST to a Gemini-compatible generateContent endpoint. The user bakes any path
 // prefix into their endpoint field. Auth: Bearer; x-goog-api-key for googleapis.com.
-async function generateImageGemini(prompt, style, referenceImages = [], options = {}) {
-    const settings = getSettings();
+async function generateImageGemini(prompt, style, referenceImages = [], options = {}, settings = { ...getSettings() }) {
     const model = settings.model;
     const base = getEffectiveEndpoint(settings);
 
@@ -5523,7 +5787,7 @@ async function generateImageGemini(prompt, style, referenceImages = [], options 
             // artifact of our own speculative retry, and reporting it would
             // point maybeSuggestFix at a path the user never configured.
             const probeText = await probeResponse.text().catch(() => '');
-            iigLog('WARN:api', `/compatible probe also failed (${probeResponse.status}); reporting the original 404. Probe body: ${probeText.slice(0, 200)}`);
+            iigLog('WARN:api', `/compatible probe also failed (${probeResponse.status}); reporting the original 404. Probe body: ${redactPromptModelGeminiError(probeText, settings.apiKey).slice(0, 200)}`);
             throw originalError;
         }
     }
@@ -5641,8 +5905,8 @@ async function generateImageGemini(prompt, style, referenceImages = [], options 
     // (E) Unknown envelope — log keys and a truncated preview for diagnosis.
     const keysPreview = Object.keys(result || {}).slice(0, 8).join(',');
     let bodyPreview = '';
-    try { bodyPreview = JSON.stringify(result).slice(0, 500); } catch (_) { bodyPreview = '<unserializable>'; }
-    iigLog('WARN:api', `Gemini response has no candidates/data/error/promptFeedback. keys=[${keysPreview}] preview=${bodyPreview} [shape-probe]`);
+    try { bodyPreview = JSON.stringify(result); } catch (_) { bodyPreview = '<unserializable>'; }
+    iigLog('WARN:api', redactPromptModelGeminiError(`Gemini response has no candidates/data/error/promptFeedback. keys=[${keysPreview}] preview=${bodyPreview} [shape-probe]`, settings.apiKey).slice(0, 700));
     throw new Error('No image in provider response (unknown shape). See logs for envelope keys.');
 }
 
@@ -5650,8 +5914,7 @@ async function generateImageGemini(prompt, style, referenceImages = [], options 
 // Naistera generator (apiType='naistera')
 // =========================================================================
 
-async function generateImageNaistera(prompt, style, options = {}) {
-    const settings = getSettings();
+async function generateImageNaistera(prompt, style, options = {}, settings = { ...getSettings() }) {
     // pathOverride is not honored here (OpenAI/Gemini only).
     const url = getNaisteraGenerationUrl(settings);
 
@@ -5707,11 +5970,11 @@ async function generateImageNaistera(prompt, style, options = {}) {
     } catch (error) {
         if (error?.name === 'AbortError') throw error;
         const pageOrigin = window.location.origin;
-        let endpointOrigin = endpoint;
+        let endpointOrigin = url;
         try { endpointOrigin = new URL(url, window.location.href).origin; } catch (_) {}
         throw new Error(
             `Network/CORS error requesting ${endpointOrigin} from ${pageOrigin}. `
-            + `Original: ${error?.message || 'Failed to fetch'}`
+            + `Original: ${error?.message || 'Failed to fetch'}`, { cause: error }
         );
     }
 
@@ -5737,7 +6000,7 @@ async function generateImageNaistera(prompt, style, options = {}) {
         try { parsed = JSON.parse(errorText); } catch (_) {}
         if (parsed?.reason === 'grok_refs_temporarily_unavailable' && referenceObjects.length > 0) {
             iigLog('WARN:api', 'Grok refs temporarily unavailable — retrying without references');
-            toastr.warning(sanitizeForHtml(iigT('iig_grokRefsUnavailable')), sanitizeForHtml(iigT('iig_title')), { timeOut: 4000 });
+            toastr.warning(sanitizeForHtml(iigT('iig_grokRefsUnavailable')), sanitizeForHtml(iigT('iig_title')), { timeOut: 4000, escapeHtml: false });
 
             delete body.reference_objects;
             delete body.reference_images;
@@ -5777,9 +6040,10 @@ async function generateImageNaistera(prompt, style, options = {}) {
 // =========================================================================
 
 /** Select refs once with their descriptions. Priority: char, user, matched NPCs. */
-async function collectReferenceEntriesAsBase64(promptText, maxRefs = 4) {
-    const settings = getSettings();
-    const refs = getActiveRefs();
+async function collectReferenceEntriesAsBase64(promptText, maxRefs = 4, settings = { ...getSettings() }) {
+    const active = getActiveRefs();
+    const refs = structuredClone({ charRef: active.charRef, userRef: active.userRef, npcReferences: active.npcReferences });
+    const charName = getStCharName(), userName = getStUserName();
     const out = [];
 
     const getB64 = async (ref) => {
@@ -5792,17 +6056,17 @@ async function collectReferenceEntriesAsBase64(promptText, maxRefs = 4) {
     };
 
     // char/user: always-sent (per-slot toggle) or name-gated like NPCs.
-    if (settings.charRefAlways || refMatchesPrompt(refs.charRef, promptText, getStCharName())) {
+    if (settings.charRefAlways || refMatchesPrompt(refs.charRef, promptText, charName)) {
         const charB64 = await getB64(refs.charRef);
         if (charB64) {
-            out.push({ image: charB64, description: String(refs.charRef?.name || getStCharName() || '').trim() });
+            out.push({ image: charB64, description: String(refs.charRef?.name || charName || '').trim() });
             iigLog('DEBUG:refs', `char ref sent (${settings.charRefAlways ? 'always' : 'name match'})`);
         }
     }
-    if (out.length < maxRefs && (settings.userRefAlways || refMatchesPrompt(refs.userRef, promptText, getStUserName()))) {
+    if (out.length < maxRefs && (settings.userRefAlways || refMatchesPrompt(refs.userRef, promptText, userName))) {
         const userB64 = await getB64(refs.userRef);
         if (userB64) {
-            out.push({ image: userB64, description: String(refs.userRef?.name || getStUserName() || '').trim() });
+            out.push({ image: userB64, description: String(refs.userRef?.name || userName || '').trim() });
             iigLog('DEBUG:refs', `user ref sent (${settings.userRefAlways ? 'always' : 'name match'})`);
         }
     }
@@ -5810,7 +6074,7 @@ async function collectReferenceEntriesAsBase64(promptText, maxRefs = 4) {
     const matchedNpcs = matchNpcReferences(promptText, refs.npcReferences || []);
     for (const npc of matchedNpcs) {
         if (out.length >= maxRefs) break;
-        const b64 = npc.imagePath ? await loadRefImageAsBase64(npc.imagePath) : (npc.imageBase64 || npc.imageData);
+        const b64 = await getB64(npc);
         if (b64) {
             out.push({ image: b64, description: String(npc.name || '').trim() });
             iigLog('DEBUG:refs', `NPC matched: ${npc.name}`);
@@ -5821,14 +6085,14 @@ async function collectReferenceEntriesAsBase64(promptText, maxRefs = 4) {
 }
 
 /** Collect refs as raw base64 for OpenAI/Gemini. */
-async function collectReferencesAsBase64(promptText, maxRefs = 4) {
-    const entries = await collectReferenceEntriesAsBase64(promptText, maxRefs);
+async function collectReferencesAsBase64(promptText, maxRefs = 4, settings) {
+    const entries = await collectReferenceEntriesAsBase64(promptText, maxRefs, settings);
     return entries.map(ref => ref.image);
 }
 
 /** Collect structured data-URL references for Naistera. */
-async function collectReferencesAsDataUrls(promptText, maxRefs = 4) {
-    const entries = await collectReferenceEntriesAsBase64(promptText, maxRefs);
+async function collectReferencesAsDataUrls(promptText, maxRefs = 4, settings) {
+    const entries = await collectReferenceEntriesAsBase64(promptText, maxRefs, settings);
     return entries.map(ref => {
         const b64 = ref.image;
         const image = String(b64).startsWith('data:')
@@ -5904,7 +6168,7 @@ function maybeSuggestFix(error) {
         if (now - lastShown < 30000) return;
         _recentErrorSuggestions.set(suggestionId, now);
 
-        toastr.info(sanitizeForHtml(iigT(suggestion, { status })), sanitizeForHtml(iigT('iig_hintTitle')), { timeOut: 9000, extendedTimeOut: 4000 });
+        toastr.info(sanitizeForHtml(iigT(suggestion, { status })), sanitizeForHtml(iigT('iig_hintTitle')), { timeOut: 9000, extendedTimeOut: 4000, escapeHtml: false });
     } catch (_) { /* swallow — hint is best-effort */ }
 }
 
@@ -5924,7 +6188,8 @@ function validateSettings() {
                 const protocol = endpointError.startsWith('Endpoint must use ')
                     ? endpointError.match(/\(got "([^"]+)"\)/)?.[1] : null;
                 errors.push(iigError(endpointError, protocol ? 'iig_endpointProtocol'
-                    : endpoint ? 'iig_endpointInvalid' : 'iig_endpointMissing',
+                    : endpointError.startsWith('Use a base endpoint') ? 'iig_endpointBaseOnly'
+                        : endpoint ? 'iig_endpointInvalid' : 'iig_endpointMissing',
                 { endpoint, protocol }));
             }
             if (!settings.apiKey) errors.push(iigError('API key not configured', 'iig_apiKeyMissing'));
@@ -5936,6 +6201,9 @@ function validateSettings() {
             break;
         }
         case 'naistera': {
+            const endpoint = getEffectiveEndpoint(settings);
+            const endpointError = validateEndpointShape(endpoint);
+            if (endpointError) errors.push(iigError(endpointError, endpointError.startsWith('Use a base endpoint') ? 'iig_endpointBaseOnly' : 'iig_endpointInvalid', { endpoint }));
             if (!settings.apiKey) errors.push(iigError('API key not configured', 'iig_apiKeyMissing'));
             break;
         }
@@ -5950,6 +6218,7 @@ function validateSettings() {
 }
 
 /** HTML-escape text for safe insertion into element content OR quoted attributes. */
+// Preescaped toastr calls use per-call escapeHtml: false to avoid host escaping twice.
 function sanitizeForHtml(text) {
     return String(text ?? '')
         .replace(/&/g, '&amp;')
@@ -6083,21 +6352,26 @@ async function parseMessageImageTags(message, options = {}) {
     const tags = [];
     const narrativeCounts = new Map();
     const displayCounts = new Map();
+    const displayNarrativeCounts = new Map();
     const sidecarRange = findPromptModelSidecarRange(String(message?.extra?.display_text || ''));
     for (const [sourceKey, source] of sources) {
         if (!source) continue;
         const parsed = (await parseImageTags(source, options))
             .sort((a, b) => a.index - b.index);
+        if (sources.some(([key, value]) => getMessageTagSource(message, key) !== value)) return [];
         for (let sourceOrdinal = 0; sourceOrdinal < parsed.length; sourceOrdinal++) {
             const tag = parsed[sourceOrdinal];
             const counts = sourceKey === 'mes' ? narrativeCounts : displayCounts;
             const occurrence = counts.get(tag.fullMatch) || 0;
             counts.set(tag.fullMatch, occurrence + 1);
-            if (sourceKey === 'display_text') {
-                const inSidecar = sidecarRange && tag.index >= sidecarRange.start && tag.index < sidecarRange.end;
-                if (!inSidecar && occurrence < (narrativeCounts.get(tag.fullMatch) || 0)) continue;
+            const inSidecar = sourceKey === 'display_text' && !!sidecarRange
+                && tag.index >= sidecarRange.start && tag.index < sidecarRange.end;
+            if (sourceKey === 'display_text' && !inSidecar) {
+                const narrativeOccurrence = displayNarrativeCounts.get(tag.fullMatch) || 0;
+                displayNarrativeCounts.set(tag.fullMatch, narrativeOccurrence + 1);
+                if (narrativeOccurrence < (narrativeCounts.get(tag.fullMatch) || 0)) continue;
             }
-            tags.push({ ...tag, sourceKey, sourceIndex: tag.index, sourceOrdinal, occurrence });
+            tags.push({ ...tag, sourceKey, sourceIndex: tag.index, sourceOrdinal, occurrence, inSidecar });
         }
     }
     return tags;
@@ -6109,36 +6383,9 @@ function getMessageTagSource(message, sourceKey) {
         : String(message?.mes || '');
 }
 
-function selectTargetMessageTags(tags, target) {
-    if (!target) return tags;
-    return tags.filter(tag => tag.sourceKey === target.sourceKey
-        && tag.sourceIndex === target.sourceIndex
-        && tag.fullMatch === target.fullMatch)
-        .map(tag => ({ ...tag, renderedIndex: target.renderedIndex }));
-}
-
-function selectTargetRenderedImage(images, renderedIndex) {
-    if (!Number.isInteger(renderedIndex) || renderedIndex < 0) return null;
-    return images?.[renderedIndex] || null;
-}
-
-function sourceHintFromTag(tag) {
-    if (!tag?.sourceKey) return null;
-    return {
-        sourceKey: tag.sourceKey,
-        sourceIndex: Number(tag.sourceIndex ?? tag.index ?? -1),
-        occurrence: Number(tag.occurrence || 0),
-        fullMatch: String(tag.fullMatch || ''),
-    };
-}
-
-function preserveImageSourceHint(imgElement, wrapper, hint) {
-    if (!hint) return;
-    imgElement._iigSourceHint = { ...hint };
-    wrapper._iigSourceHint = { ...hint };
-}
-
 async function resolveRenderedImageSource(imgElement) {
+    if (_iigDisposed) return null;
+    invalidateContextCache();
     const messageElement = imgElement?.closest?.('.mes[mesid]');
     const messageId = Number.parseInt(messageElement?.getAttribute('mesid') || '', 10);
     const message = Number.isInteger(messageId) ? getContext()?.chat?.[messageId] : null;
@@ -6147,84 +6394,99 @@ async function resolveRenderedImageSource(imgElement) {
     const rendered = Array.from(messageElement.querySelectorAll('.mes_text img[data-iig-instruction]'));
     const renderedIndex = rendered.indexOf(imgElement);
     if (renderedIndex < 0) return null;
+    const scope = buildProcessingKey(messageId);
+    const chat = getContext()?.chat;
+    const swipe = message.swipe_info?.[getMessageSwipeId(message)];
+    const narrativeSource = getMessageTagSource(message, 'mes');
+    const displaySource = getMessageTagSource(message, 'display_text');
+    const isCurrent = () => {
+        invalidateContextCache();
+        const current = getContext();
+        const images = Array.from(messageElement.querySelectorAll('.mes_text img[data-iig-instruction]'));
+        return !_iigDisposed && imgElement.isConnected && current?.chat === chat
+            && imgElement.closest('.mes[mesid]') === messageElement
+            && Number.parseInt(messageElement.getAttribute('mesid'), 10) === messageId
+            && current.chat[messageId] === message && buildProcessingKey(messageId) === scope
+            && message.swipe_info?.[getMessageSwipeId(message)] === swipe
+            && getMessageTagSource(message, 'mes') === narrativeSource
+            && getMessageTagSource(message, 'display_text') === displaySource
+            && images.length === rendered.length && images.every((image, index) => image === rendered[index]);
+    };
     const tags = (await parseMessageImageTags(message, { forceAll: true }))
         .filter(tag => tag.mediaType === 'image' && tag.isNewFormat);
-    const hint = imgElement._iigSourceHint || imgElement.closest('.iig-image-wrapper')?._iigSourceHint;
-    const hintedTag = hint && tags.find(tag => tag.sourceKey === hint.sourceKey
-        && tag.occurrence === hint.occurrence
-        && tag.sourceIndex === hint.sourceIndex
-        && tag.fullMatch === hint.fullMatch);
-    let tag = hintedTag;
-    if (!tag) {
-        const displaySource = String(message.extra?.display_text || '');
-        const renderedSourceKey = displaySource ? 'display_text' : 'mes';
-        const renderedSource = renderedSourceKey === 'display_text' ? displaySource : String(message.mes || '');
-        const occurrenceCounts = new Map();
-        const renderedTags = (await parseImageTags(renderedSource, { forceAll: true }))
-            .sort((a, b) => a.index - b.index)
-            .map((candidate, sourceOrdinal) => ({ ...candidate, sourceOrdinal }))
-            .filter(candidate => candidate.isNewFormat)
-            .map(candidate => {
-                const occurrence = occurrenceCounts.get(candidate.fullMatch) || 0;
-                occurrenceCounts.set(candidate.fullMatch, occurrence + 1);
-                return { ...candidate, sourceKey: renderedSourceKey, sourceIndex: candidate.index, occurrence };
-            });
-        tag = renderedTags[renderedIndex];
-        if (tag?.sourceKey === 'display_text') {
-            const sidecarRange = findPromptModelSidecarRange(displaySource);
-            const inSidecar = sidecarRange && tag.sourceIndex >= sidecarRange.start && tag.sourceIndex < sidecarRange.end;
-            if (!inSidecar) {
-                tag = tags.find(candidate => candidate.sourceKey === 'mes'
-                    && candidate.fullMatch === tag.fullMatch
-                    && candidate.occurrence === tag.occurrence) || tag;
-            }
-        }
-    }
+    if (!isCurrent()) return null;
+    const renderedSourceKey = displaySource ? 'display_text' : 'mes';
+    const renderedSource = displaySource || narrativeSource;
+    const parsed = (await parseImageTags(renderedSource, { forceAll: true }))
+        .sort((a, b) => a.index - b.index);
+    if (!isCurrent()) return null;
+    const sidecarRange = findPromptModelSidecarRange(displaySource);
+    const occurrenceCounts = new Map();
+    const narrativeCounts = new Map();
+    const renderedTags = parsed.map((candidate, sourceOrdinal) => {
+        const occurrence = occurrenceCounts.get(candidate.fullMatch) || 0;
+        occurrenceCounts.set(candidate.fullMatch, occurrence + 1);
+        const inSidecar = renderedSourceKey === 'display_text' && !!sidecarRange
+            && candidate.index >= sidecarRange.start && candidate.index < sidecarRange.end;
+        const narrativeOccurrence = narrativeCounts.get(candidate.fullMatch) || 0;
+        if (!inSidecar) narrativeCounts.set(candidate.fullMatch, narrativeOccurrence + 1);
+        return { ...candidate, sourceKey: renderedSourceKey, sourceIndex: candidate.index,
+            sourceOrdinal, occurrence, narrativeOccurrence, inSidecar };
+    }).filter(candidate => candidate.mediaType === 'image' && candidate.isNewFormat);
+    if (renderedTags.length !== rendered.length) return null;
+    let tag = renderedTags[renderedIndex];
     if (!tag) return null;
+
+    // The rendered occurrence and its current attributes must agree before choosing a source.
+    const template = document.createElement('template');
+    template.innerHTML = tag.fullMatch;
+    const sourceImage = template.content.querySelector('img[data-iig-instruction]');
+    try {
+        if (!sourceImage || (sourceImage.getAttribute('src') || '') !== (imgElement.getAttribute('src') || '')
+            || JSON.stringify(parseInstructionObject(sourceImage.getAttribute('data-iig-instruction')))
+                !== JSON.stringify(parseInstructionObject(imgElement.getAttribute('data-iig-instruction')))) return null;
+    } catch (_) {
+        return null;
+    }
+    if (tag.sourceKey === 'display_text' && !tag.inSidecar) {
+        tag = tags.find(candidate => candidate.sourceKey === 'mes'
+            && candidate.fullMatch === tag.fullMatch
+            && candidate.occurrence === tag.narrativeOccurrence) || tag;
+    }
     const source = getMessageTagSource(message, tag.sourceKey);
     if (source.slice(tag.sourceIndex, tag.sourceIndex + tag.fullMatch.length) !== tag.fullMatch) return null;
     return { messageId, message, tag, source, renderedIndex };
 }
 
-/** Replace tag text across mes, display_text, and every swipe (so swipe-back keeps it). */
-function replaceTagInMessageSource(message, tag, replacement) {
-    if (!message || !tag) return;
-    if (Number.isInteger(tag.sourceIndex)
-        && replaceExactTagInMessageSource(message, tag, getMessageTagSource(message, tag.sourceKey), replacement)) {
-        return;
-    }
-    const find = tag.fullMatch;
+const _imageSourceSelections = new WeakMap();
 
-    if (tag.sourceKey === 'display_text') {
-        if (typeof message.extra?.display_text === 'string') {
-            message.extra.display_text = message.extra.display_text.replace(find, replacement);
-        }
-        const swipeId = getMessageSwipeId(message);
-        const currentDisplay = message.swipe_info?.[swipeId]?.extra?.display_text;
-        if (typeof currentDisplay === 'string') {
-            message.swipe_info[swipeId].extra.display_text = currentDisplay.replace(find, replacement);
-        }
-        return;
-    }
+function trackImageSourceSelection(message, tag) {
+    const selection = { tag: { ...tag }, mes: getMessageTagSource(message, 'mes'),
+        display_text: getMessageTagSource(message, 'display_text'), valid: true };
+    let selections = _imageSourceSelections.get(message);
+    if (!selections) _imageSourceSelections.set(message, selections = new Set());
+    selections.add(selection);
+    selection.release = () => {
+        selections.delete(selection);
+        if (!selections.size) _imageSourceSelections.delete(message);
+    };
+    return selection;
+}
 
-    message.mes = (message.mes || '').replace(find, replacement);
-    if (message.extra?.display_text) {
-        message.extra.display_text = message.extra.display_text.replace(find, replacement);
-    }
-    if (Array.isArray(message.swipes)) {
-        for (let i = 0; i < message.swipes.length; i++) {
-            if (typeof message.swipes[i] === 'string') {
-                message.swipes[i] = message.swipes[i].replace(find, replacement);
-            }
-        }
-    }
-    if (Array.isArray(message.swipe_info)) {
-        for (let i = 0; i < message.swipe_info.length; i++) {
-            const dt = message.swipe_info[i]?.extra?.display_text;
-            if (typeof dt === 'string') {
-                message.swipe_info[i].extra.display_text = dt.replace(find, replacement);
-            }
-        }
+function isImageSourceSelectionCurrent(message, selection) {
+    return selection.valid && ['mes', 'display_text'].every(key =>
+        getMessageTagSource(message, key) === selection[key]);
+}
+
+// Only known exact splices can move another in-flight selection's offset.
+function advanceImageSourceSelections(message, sourceKey, before, after, index, length, replacementLength) {
+    for (const selection of _imageSourceSelections.get(message) || []) {
+        if (selection[sourceKey] !== before) { selection.valid = false; continue; }
+        selection[sourceKey] = after;
+        if (selection.tag.sourceKey !== sourceKey) continue;
+        const start = selection.tag.sourceIndex;
+        if (start >= index + length) selection.tag.sourceIndex += replacementLength - length;
+        else if (start + selection.tag.fullMatch.length > index) selection.valid = false;
     }
 }
 
@@ -6235,22 +6497,29 @@ function replaceExactTagInMessageSource(message, tag, expectedSource, replacemen
     const end = tag.sourceIndex + tag.fullMatch.length;
     if (currentSource.slice(tag.sourceIndex, end) !== tag.fullMatch) return false;
     const updated = currentSource.slice(0, tag.sourceIndex) + replacement + currentSource.slice(end);
+    const swipeId = getMessageSwipeId(message);
+    const mirror = message.swipe_info?.[swipeId]?.extra?.display_text;
+    if (mirror !== undefined && mirror !== message.extra?.display_text) return false;
+    if (tag.sourceKey !== 'display_text' && message.swipes?.[swipeId] !== undefined
+        && message.swipes[swipeId] !== message.mes) return false;
     if (tag.sourceKey === 'display_text') {
         writePromptModelDisplayText(message, updated);
     } else {
         message.mes = updated;
-        const swipeId = getMessageSwipeId(message);
         if (Array.isArray(message.swipes) && typeof message.swipes[swipeId] === 'string') {
             message.swipes[swipeId] = updated;
         }
         if (typeof message.extra?.display_text === 'string') {
             const display = message.extra.display_text;
-            const displayIndex = findTagOccurrenceIndex(display, tag.fullMatch, tag.occurrence);
+            const displayIndex = findTagOccurrenceIndex(display, tag.fullMatch, tag.occurrence, findPromptModelSidecarRange(display));
             if (displayIndex >= 0) {
-                writePromptModelDisplayText(message, display.slice(0, displayIndex) + replacement + display.slice(displayIndex + tag.fullMatch.length));
+                const updatedDisplay = display.slice(0, displayIndex) + replacement + display.slice(displayIndex + tag.fullMatch.length);
+                writePromptModelDisplayText(message, updatedDisplay);
+                advanceImageSourceSelections(message, 'display_text', display, updatedDisplay, displayIndex, tag.fullMatch.length, replacement.length);
             }
         }
     }
+    advanceImageSourceSelections(message, tag.sourceKey || 'mes', currentSource, updated, tag.sourceIndex, tag.fullMatch.length, replacement.length);
     return true;
 }
 
@@ -6269,41 +6538,17 @@ function snapshotSingleImageSource(message, tag = null) {
         mes: message.mes,
         hasDisplayText: Object.hasOwn(message.extra || {}, 'display_text'),
         displayText: message.extra?.display_text,
+        extraOwner: message.extra,
+        swipesOwner: message.swipes,
         swipes: Array.isArray(message.swipes) ? [...message.swipes] : null,
         swipeDisplays: Array.isArray(message.swipe_info)
             ? message.swipe_info.map(info => ({
                 hasDisplayText: Object.hasOwn(info?.extra || {}, 'display_text'),
                 displayText: info?.extra?.display_text,
+                owner: info?.extra,
             }))
             : null,
     };
-}
-
-function rebaseSingleImageTag(snapshot, parsedTags) {
-    const ordinal = Number(snapshot?.tag?.sourceOrdinal);
-    if (!Number.isInteger(ordinal) || ordinal < 0) return null;
-    const candidate = parsedTags?.[ordinal];
-    if (!candidate || candidate.fullMatch !== snapshot.tag.fullMatch) return null;
-    let occurrence = 0;
-    for (let index = 0; index < ordinal; index++) {
-        if (parsedTags[index]?.fullMatch === candidate.fullMatch) occurrence++;
-    }
-    return {
-        ...snapshot.tag,
-        ...candidate,
-        sourceKey: snapshot.tag.sourceKey,
-        sourceIndex: candidate.index,
-        sourceOrdinal: ordinal,
-        occurrence,
-    };
-}
-
-async function resolveCurrentSingleImageTag(message, snapshot) {
-    if (!snapshot?.tag) return null;
-    const source = getMessageTagSource(message, snapshot.tag.sourceKey);
-    const parsedTags = (await parseImageTags(source, { forceAll: true }))
-        .sort((a, b) => a.index - b.index);
-    return rebaseSingleImageTag(snapshot, parsedTags);
 }
 
 function applySingleImageSourceReplacement(message, snapshot, replacement) {
@@ -6311,23 +6556,31 @@ function applySingleImageSourceReplacement(message, snapshot, replacement) {
     return replaceExactTagInMessageSource(message, snapshot.tag, snapshot.source, replacement);
 }
 
-function restoreSingleImageSource(message, snapshot) {
-    if (!message || !snapshot) return false;
-    message.mes = snapshot.mes;
-    if (!message.extra || typeof message.extra !== 'object') message.extra = {};
-    if (snapshot.hasDisplayText) message.extra.display_text = snapshot.displayText;
-    else delete message.extra.display_text;
-    if (snapshot.swipes) message.swipes = [...snapshot.swipes];
+function restoreSingleImageSource(message, snapshot, written) {
+    if (!message || !snapshot || !written) return false;
+    let restored = false;
+    const restore = (owner, key, before, after, had = true) => {
+        if (!owner || before === after || owner[key] !== after) return;
+        if (had) owner[key] = before;
+        else delete owner[key];
+        restored = true;
+    };
+    restore(message, 'mes', snapshot.mes, written.mes);
+    if (message.extra === written.extraOwner) {
+        restore(message.extra, 'display_text', snapshot.displayText, written.displayText, snapshot.hasDisplayText);
+    }
+    if (snapshot.swipes && message.swipes === written.swipesOwner) {
+        snapshot.swipes.forEach((value, index) => restore(message.swipes, index, value, written.swipes[index]));
+    }
     if (snapshot.swipeDisplays && Array.isArray(message.swipe_info)) {
         snapshot.swipeDisplays.forEach((saved, index) => {
             const info = message.swipe_info[index];
-            if (!info) return;
-            if (!info.extra || typeof info.extra !== 'object') info.extra = {};
-            if (saved.hasDisplayText) info.extra.display_text = saved.displayText;
-            else delete info.extra.display_text;
+            const after = written.swipeDisplays[index];
+            if (!info?.extra || info.extra !== after?.owner) return;
+            restore(info.extra, 'display_text', saved.displayText, after.displayText, saved.hasDisplayText);
         });
     }
-    return true;
+    return restored;
 }
 
 const _singleImageCommitTails = new WeakMap();
@@ -6348,9 +6601,10 @@ async function queueSingleImageCommit(message, task) {
     }
 }
 
-async function commitSingleImageSource(message, snapshot, applyReplacement, saveChat) {
+async function commitSingleImageSource(message, snapshot, applyReplacement, saveChat, canRecover = () => !_iigDisposed) {
     throwIfSignalAborted();
     let sourceMutated = false;
+    let written;
     try {
         if (!applyReplacement()) {
             const staleError = new Error('Selected image source changed during regeneration');
@@ -6358,10 +6612,10 @@ async function commitSingleImageSource(message, snapshot, applyReplacement, save
             throw staleError;
         }
         sourceMutated = true;
+        written = snapshotSingleImageSource(message);
         await saveChat();
     } catch (error) {
-        if (sourceMutated) {
-            restoreSingleImageSource(message, snapshot);
+        if (sourceMutated && canRecover() && restoreSingleImageSource(message, snapshot, written)) {
             try {
                 await saveChat();
             } catch (rollbackError) {
@@ -6370,32 +6624,6 @@ async function commitSingleImageSource(message, snapshot, applyReplacement, save
         }
         error.iigPersistenceFailure = true;
         throw error;
-    }
-}
-
-/** Swap a src across mes, display_text, and every swipe (so regen survives swipe-back). */
-function replaceSrcEverywhere(message, oldSrc, newSrc) {
-    if (!message || !oldSrc || oldSrc === newSrc) return;
-    const rep = (s) => (typeof s === 'string' && s.includes(oldSrc)) ? s.split(oldSrc).join(newSrc) : s;
-
-    if (!String(message.mes || '').includes(oldSrc) && String(message.extra?.display_text || '').includes(oldSrc)) {
-        message.extra.display_text = rep(message.extra.display_text);
-        const swipeId = getMessageSwipeId(message);
-        const currentDisplay = message.swipe_info?.[swipeId]?.extra?.display_text;
-        if (typeof currentDisplay === 'string') message.swipe_info[swipeId].extra.display_text = rep(currentDisplay);
-        return;
-    }
-
-    if (typeof message.mes === 'string') message.mes = rep(message.mes);
-    if (typeof message.extra?.display_text === 'string') message.extra.display_text = rep(message.extra.display_text);
-    if (Array.isArray(message.swipes)) {
-        for (let i = 0; i < message.swipes.length; i++) message.swipes[i] = rep(message.swipes[i]);
-    }
-    if (Array.isArray(message.swipe_info)) {
-        for (let i = 0; i < message.swipe_info.length; i++) {
-            const dt = message.swipe_info[i]?.extra?.display_text;
-            if (typeof dt === 'string') message.swipe_info[i].extra.display_text = rep(dt);
-        }
     }
 }
 
@@ -6513,7 +6741,8 @@ function clampRetries(value) {
 async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {}) {
     validateSettings();
 
-    const settings = getSettings();
+    const settings = Object.freeze({ ...getSettings() });
+    options = { ...options };
     // Clamped at READ, not just at the input handler — getSettings() replays
     // whatever is in settings.json verbatim.
     const configuredMax = clampRetries(settings.maxRetries);
@@ -6521,7 +6750,7 @@ async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {
 
     // Prompt-driven=off forces UI defaults; strip per-tag overrides.
     if (settings.promptDriven === false) {
-        const stripped = Object.keys(options).filter(k => ['aspectRatio','imageSize','quality','preset'].includes(k));
+        const stripped = Object.keys(options).filter(k => ['imageSize','quality','preset'].includes(k));
         if (stripped.length > 0) {
             iigLog('INFO', `Prompt-driven=off: ignoring tag overrides (${stripped.join(', ')})`);
             for (const k of stripped) delete options[k];
@@ -6535,7 +6764,7 @@ async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {
         const modelOk = naisteraModelSupportsReferences(settings.naisteraModel);
         const userOk = settings.naisteraSendRefs !== false;
         if (modelOk && userOk) {
-            referenceDataUrls = await collectReferencesAsDataUrls(prompt, 4);
+            referenceDataUrls = await collectReferencesAsDataUrls(prompt, 4, settings);
         } else {
             iigLog('INFO', `Naistera refs skipped: modelOk=${modelOk}, userOk=${userOk}`);
         }
@@ -6543,7 +6772,7 @@ async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {
         iigLog('INFO', 'Gemini refs skipped: user toggle off');
     } else {
         const maxRefs = settings.apiType === 'openai' && isRoutMyNovelAiModel(settings.model) ? 2 : 4;
-        referenceImages = await collectReferencesAsBase64(prompt, maxRefs);
+        referenceImages = await collectReferencesAsBase64(prompt, maxRefs, settings);
     }
 
     let lastError;
@@ -6570,14 +6799,15 @@ async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {
 
             switch (settings.apiType) {
                 case 'naistera':
-                    return await generateImageNaistera(prompt, style, { ...options, referenceImages: referenceDataUrls });
+                    return await generateImageNaistera(prompt, style, { ...options, referenceImages: referenceDataUrls }, settings);
                 case 'gemini':
-                    return await generateImageGemini(prompt, style, referenceImages, options);
+                    return await generateImageGemini(prompt, style, referenceImages, options, settings);
                 case 'openai':
                 default:
-                    return await generateImageOpenAI(prompt, style, referenceImages, options);
+                    return await generateImageOpenAI(prompt, style, referenceImages, options, settings);
             }
-        } catch (error) {
+        } catch (failure) {
+            const error = redactSensitive(failure, value => redactPromptModelGeminiError(value, settings.apiKey));
             lastError = error;
             iigLog('ERROR:api', `Generation attempt ${attempt + 1} failed:`, error.message);
 
@@ -6676,24 +6906,26 @@ async function parseImageTags(text, options = {}) {
     const { checkExistence = false, forceAll = false } = options;
     const tags = [];
 
-    if (!text || (!text.includes('data-iig-instruction') && !text.includes('[IMG:GEN:') && !text.includes('[IMG:✓:'))) {
+    if (!text || (!/data-iig-instruction/i.test(text) && !text.includes('[IMG:GEN:') && !text.includes('[IMG:✓:'))) {
         return tags;
     }
 
-    const imgTagMarker = 'data-iig-instruction=';
+    const imgTagMarker = /\bdata-iig-instruction\s*=\s*/gi;
     let searchPos = 0;
 
     while (true) {
-        const markerPos = text.indexOf(imgTagMarker, searchPos);
-        if (markerPos === -1) break;
+        imgTagMarker.lastIndex = searchPos;
+        const marker = imgTagMarker.exec(text);
+        if (!marker) break;
+        const markerPos = marker.index;
 
-        let imgStart = text.lastIndexOf('<img', markerPos);
-        if (imgStart === -1 || markerPos - imgStart > 500) {
+        const imgStart = text.lastIndexOf('<', markerPos);
+        if (imgStart === -1 || !/^<img\b/i.test(text.slice(imgStart, markerPos)) || markerPos - imgStart > 500) {
             searchPos = markerPos + 1;
             continue;
         }
         
-        const afterMarker = markerPos + imgTagMarker.length;
+        const afterMarker = markerPos + marker[0].length;
         let jsonStart = text.indexOf('{', afterMarker);
         if (jsonStart === -1 || jsonStart > afterMarker + 10) {
             searchPos = markerPos + 1;
@@ -6979,11 +7211,6 @@ function getErrorImagePath() {
     return _cachedErrorImagePath;
 }
 
-/** Attribute-escaping alias for paths. */
-function escapeAttrPath(path) {
-    return escapeAttr(path);
-}
-
 // Inline SVG icons for image action buttons (no external deps).
 const SVG_ICON_REGENERATE = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
 const SVG_ICON_PROMPT_REGENERATE = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4M3 5h4M19 17v4M17 19h4"/></svg>`;
@@ -6991,39 +7218,11 @@ const SVG_ICON_DOWNLOAD = `<svg xmlns="http://www.w3.org/2000/svg" width="18" he
 // Stop = rounded filled square (no glyph/font dependency).
 const SVG_ICON_STOP = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
 
-function isPromptModelImageElement(imgElement) {
-    const messageElement = imgElement.closest('.mes[mesid]');
-    const messageId = Number.parseInt(messageElement?.getAttribute('mesid') || '', 10);
-    const message = Number.isInteger(messageId) ? getContext()?.chat?.[messageId] : null;
-    const displayText = String(message?.extra?.display_text || '');
-    const instruction = imgElement.getAttribute('data-iig-instruction');
-    if (!findPromptModelSidecarRange(displayText) || !instruction) return false;
-
-    let normalizedInstruction;
-    try {
-        normalizedInstruction = JSON.stringify(parseInstructionObject(instruction));
-    } catch (_) {
-        return false;
-    }
-    const currentSrc = imgElement.getAttribute('src') || '';
-    const template = document.createElement('template');
-    template.innerHTML = displayText;
-    const renderedImages = Array.from(messageElement.querySelectorAll('.mes_text img[data-iig-instruction]'));
-    const sourceImages = Array.from(template.content.querySelectorAll('img[data-iig-instruction]'));
-    const sourceImage = sourceImages[renderedImages.indexOf(imgElement)];
-    if (!sourceImage?.closest('[data-iig-sidecar="1"]')) return false;
-    try {
-        const candidate = JSON.stringify(parseInstructionObject(sourceImage.getAttribute('data-iig-instruction') || ''));
-        return candidate === normalizedInstruction && (sourceImage.getAttribute('src') || '') === currentSrc;
-    } catch (_) {
-        return false;
-    }
-}
-
 let _tapAutoHideTimer = null;
 
 function bindTapImageActions(wrapper) {
-    if (_iigDisposed || !USE_TAP_IMAGE_ACTIONS) return;
+    if (_iigDisposed || !USE_TAP_IMAGE_ACTIONS || wrapper._iigTapActionsBound) return;
+    wrapper._iigTapActionsBound = true;
     bindIig(wrapper, 'click', (event) => {
         if (event.target.closest('.iig-action-btn')) return;
         event.preventDefault();
@@ -7049,60 +7248,64 @@ function bindTapImageActions(wrapper) {
  * Wrap <img> with overlay regen/download buttons. Desktop: hover + lightbox;
  * Touch/coarse pointer: tap toggles (4s auto-hide); mobile has no lightbox.
  */
-function wrapImageWithActions(imgElement, options = {}) {
+function wrapImageWithActions(imgElement, failedImage = false) {
     if (_iigDisposed) return imgElement;
-    if (imgElement.parentElement?.classList.contains('iig-image-wrapper')) return imgElement.parentElement;
-    const promptModelImage = options.promptModel
-        ?? (options.sourceTag?.sourceKey === 'display_text' || isPromptModelImageElement(imgElement));
 
-    const wrapper = document.createElement('div');
-    wrapper.className = 'iig-image-wrapper';
+    let wrapper = imgElement.parentElement;
+    if (!wrapper?.classList.contains('iig-image-wrapper')) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'iig-image-wrapper';
+        // Replace in-place if attached; otherwise just nest the detached img.
+        if (imgElement.parentElement) imgElement.replaceWith(wrapper);
+        wrapper.appendChild(imgElement);
+    }
+    if (failedImage && !wrapper.classList.contains('iig-placeholder-wrapper')) wrapper.classList.add('iig-placeholder-wrapper');
 
-    const btnRegen = document.createElement('button');
-    btnRegen.className = 'iig-action-btn iig-action-regen';
-    btnRegen.innerHTML = SVG_ICON_REGENERATE;
-    btnRegen.title = iigT('iig_regenerate');
-    btnRegen.setAttribute('aria-label', iigT('iig_regenerateImage'));
-    btnRegen.type = 'button';
+    if (!wrapper.querySelector('.iig-action-regen')) {
+        const btnRegen = document.createElement('button');
+        btnRegen.className = 'iig-action-btn iig-action-regen';
+        btnRegen.innerHTML = SVG_ICON_REGENERATE;
+        btnRegen.title = iigT(failedImage ? 'iig_retry' : 'iig_regenerate');
+        btnRegen.setAttribute('aria-label', iigT(failedImage ? 'iig_retryImage' : 'iig_regenerateImage'));
+        btnRegen.type = 'button';
+        wrapper.appendChild(btnRegen);
+        bindIig(btnRegen, 'click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            return regenerateSingleImage(imgElement);
+        });
+    }
 
-    const btnPromptRegen = promptModelImage ? null : document.createElement('button');
-    if (btnPromptRegen) {
+    const existingPromptRegen = wrapper.querySelector('.iig-action-prompt-regen');
+    if (!existingPromptRegen) {
+        const btnPromptRegen = document.createElement('button');
         btnPromptRegen.className = 'iig-action-btn iig-action-prompt-regen';
         btnPromptRegen.dataset.iigPmReroll = '1';
         btnPromptRegen.innerHTML = SVG_ICON_PROMPT_REGENERATE;
         btnPromptRegen.title = pmT('reroll');
         btnPromptRegen.setAttribute('aria-label', pmT('reroll'));
         btnPromptRegen.type = 'button';
+        wrapper.appendChild(btnPromptRegen);
+    } else if (existingPromptRegen.hidden) {
+        existingPromptRegen.hidden = false;
     }
 
-    const btnDownload = document.createElement('button');
-    btnDownload.className = 'iig-action-btn iig-action-download';
-    btnDownload.innerHTML = SVG_ICON_DOWNLOAD;
-    btnDownload.title = iigT(IS_MOBILE ? 'iig_openToSave' : 'iig_download');
-    btnDownload.setAttribute('aria-label', btnDownload.title);
-    btnDownload.type = 'button';
-
-    // Replace in-place if attached; otherwise just nest the detached img.
-    if (imgElement.parentElement) {
-        imgElement.replaceWith(wrapper);
+    if (failedImage) {
+        wrapper.querySelector('.iig-action-download')?.remove();
+    } else if (!wrapper.querySelector('.iig-action-download')) {
+        const btnDownload = document.createElement('button');
+        btnDownload.className = 'iig-action-btn iig-action-download';
+        btnDownload.innerHTML = SVG_ICON_DOWNLOAD;
+        btnDownload.title = iigT(IS_MOBILE ? 'iig_openToSave' : 'iig_download');
+        btnDownload.setAttribute('aria-label', btnDownload.title);
+        btnDownload.type = 'button';
+        wrapper.appendChild(btnDownload);
+        bindIig(btnDownload, 'click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            return downloadGeneratedImage(imgElement);
+        });
     }
-    wrapper.appendChild(imgElement);
-    preserveImageSourceHint(imgElement, wrapper, options.sourceHint || sourceHintFromTag(options.sourceTag) || imgElement._iigSourceHint);
-    wrapper.appendChild(btnRegen);
-    if (btnPromptRegen) wrapper.appendChild(btnPromptRegen);
-    wrapper.appendChild(btnDownload);
-
-    bindIig(btnDownload, 'click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        return downloadGeneratedImage(imgElement);
-    });
-
-    bindIig(btnRegen, 'click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        return regenerateSingleImage(imgElement);
-    });
 
     bindTapImageActions(wrapper);
 
@@ -7119,7 +7322,7 @@ function openLightbox(imgElement) {
     const safeSrc = safeMediaUrlOrNull(imgElement.src);
     if (!safeSrc) {
         iigLog('WARN', `Refusing to open lightbox for unsafe src: ${String(imgElement.src).slice(0, 60)}`);
-        toastr.error(sanitizeForHtml(iigT('iig_unsafeImageUrl')), sanitizeForHtml(iigT('iig_title')));
+        toastr.error(sanitizeForHtml(iigT('iig_unsafeImageUrl')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         return;
     }
     lbImg.src = safeSrc;
@@ -7138,17 +7341,17 @@ async function downloadGeneratedImage(imgElement) {
     if (!src) {
         if (imgElement.src) {
             iigLog('WARN', `Refusing to download unsafe src: ${String(imgElement.src).slice(0, 60)}`);
-            toastr.error(sanitizeForHtml(iigT('iig_unsafeDownloadUrl')), sanitizeForHtml(iigT('iig_title')));
+            toastr.error(sanitizeForHtml(iigT('iig_unsafeDownloadUrl')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         }
         return;
     }
 
     try {
-        toastr.info(sanitizeForHtml(iigT('iig_downloading')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
+        toastr.info(sanitizeForHtml(iigT('iig_downloading')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
 
         if (IS_MOBILE) {
             window.open(src, '_blank');
-            toastr.success(sanitizeForHtml(iigT('iig_imageOpened')), sanitizeForHtml(iigT('iig_title')), { timeOut: 3000 });
+            toastr.success(sanitizeForHtml(iigT('iig_imageOpened')), sanitizeForHtml(iigT('iig_title')), { timeOut: 3000, escapeHtml: false });
             return;
         }
 
@@ -7174,82 +7377,136 @@ async function downloadGeneratedImage(imgElement) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        toastr.success(sanitizeForHtml(iigT('iig_imageDownloaded')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
+        toastr.success(sanitizeForHtml(iigT('iig_imageDownloaded')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
     } catch (error) {
         iigLog('ERROR', 'Download failed:', error.message);
-        toastr.error(sanitizeForHtml(iigT('iig_downloadFailed', { error: iigErrorText(error) })), sanitizeForHtml(iigT('iig_title')));
+        toastr.error(sanitizeForHtml(iigT('iig_downloadFailed', { error: iigErrorText(error) })), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
     }
 }
 
 /** Regenerate a single image in place (per-image, not whole message). */
-async function regenerateSingleImage(imgElement) {
+async function regenerateSingleImage(imgElement, preparedSource = null) {
     if (_iigDisposed) return;
-    const instruction = imgElement.getAttribute('data-iig-instruction');
+    const instruction = preparedSource ? getInstructionAttributeValue(preparedSource.tag) : imgElement.getAttribute('data-iig-instruction');
     if (!instruction) {
-        toastr.warning(sanitizeForHtml(iigT('iig_instructionMissing')), sanitizeForHtml(iigT('iig_title')));
+        toastr.warning(sanitizeForHtml(iigT('iig_instructionMissing')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         return;
     }
 
     const mesElement = imgElement.closest('.mes[mesid]');
     if (!mesElement) {
-        toastr.error(sanitizeForHtml(iigT('iig_parentMessageMissing')), sanitizeForHtml(iigT('iig_title')));
+        toastr.error(sanitizeForHtml(iigT('iig_parentMessageMissing')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         return;
     }
     const messageId = parseInt(mesElement.getAttribute('mesid'), 10);
     const context = getContext();
     const message = context.chat[messageId];
     if (!message) return;
-    const promptModelImage = isPromptModelImageElement(imgElement);
-    const resolvedSource = await resolveRenderedImageSource(imgElement);
+    const resolvedSource = preparedSource || await resolveRenderedImageSource(imgElement);
     if (_iigDisposed) return;
-    const sourceHint = imgElement._iigSourceHint || sourceHintFromTag(resolvedSource?.tag);
-    const sourceSnapshot = { tag: resolvedSource?.tag ? { ...resolvedSource.tag } : null };
-    let committedSourceHint = sourceHint;
+    if (!resolvedSource || resolvedSource.message !== message) {
+        toastr.warning(sanitizeForHtml(iigT('iig_sourceChanged')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
+        return;
+    }
 
     let data;
     try {
         data = parseInstructionObject(instruction);
     } catch (e) {
-        toastr.error(sanitizeForHtml(iigT('iig_instructionParseFailed')), sanitizeForHtml(iigT('iig_title')));
+        toastr.error(sanitizeForHtml(iigT('iig_instructionParseFailed')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         return;
     }
 
-    // Capture the PREVIOUS image up front (before any DOM swap) so a user Stop
-    // can restore it. Only a real generated image counts as restorable.
+    // Keep the original occurrence until its source and replacement have both been saved.
     const prevSrc = imgElement.getAttribute('src') || '';
-    const prevAlt = imgElement.getAttribute('alt') || '';
-    const prevTitle = imgElement.getAttribute('title') || '';
+    const originalInstruction = imgElement.getAttribute('data-iig-instruction');
     const prevIsRealImage = !!prevSrc && !prevSrc.includes('error.svg') && !prevSrc.includes('[IMG:');
-    const previousImg = imgElement.cloneNode(true);
-
-    const wrapper = imgElement.closest('.iig-image-wrapper');
+    const wrapper = imgElement.closest('.iig-image-wrapper')
+        || (imgElement.classList.contains('iig-error-image') ? wrapPlaceholderWithRetry(imgElement) : wrapImageWithActions(imgElement));
+    if (wrapper._iigRegenerateController || wrapper._iigRewriteController) return;
+    const selection = trackImageSourceSelection(message, resolvedSource.tag);
+    let sourceCommitted = false;
+    const fresh = !prevIsRealImage && !prevSrc.includes('error.svg');
+    const swipeInfo = message.swipe_info?.[getMessageSwipeId(message)];
+    const wasHidden = wrapper.hidden;
+    const focusedControl = wrapper.contains(document.activeElement) ? document.activeElement : null;
+    const controls = Array.from(wrapper.querySelectorAll('button')).map(button => ({ button, disabled: button.disabled }));
+    // Retain the source occurrence in the DOM while sibling images resolve their own targets.
+    const requestScope = buildProcessingKey(messageId);
+    const { controller, key } = beginGeneration(messageId, resolvedSource.tag);
+    wrapper._iigRegenerateController = controller;
     const tagId = `iig-single-regen-${messageId}-${Date.now()}-${++_singleImageGenerationSerial}`;
     const loadingPlaceholder = createLoadingPlaceholder(tagId);
-
-    if (wrapper) {
-        wrapper.replaceWith(loadingPlaceholder);
-    } else {
-        imgElement.replaceWith(loadingPlaceholder);
-    }
+    tagAbortControllers.set(tagId, controller);
+    wrapper.after(loadingPlaceholder);
+    controls.forEach(({ button }) => { button.disabled = true; });
+    wrapper.hidden = true;
+    if (focusedControl) loadingPlaceholder.querySelector('.iig-stop-btn')?.focus({ preventScroll: true });
+    const ownsUI = () => !_iigDisposed && wrapper._iigRegenerateController === controller
+        && _inFlightGenerations.get(key) === controller && wrapper.isConnected && loadingPlaceholder.isConnected
+        && imgElement.parentElement === wrapper && wrapper.closest('.mes[mesid]') === mesElement
+        && imgElement.getAttribute('src') === prevSrc
+        && imgElement.getAttribute('data-iig-instruction') === originalInstruction
+        && mesElement.getAttribute('mesid') === String(messageId)
+        && getContext()?.chat?.[messageId] === message && buildProcessingKey(messageId) === requestScope;
+    const assertCurrent = (allowStopped = false) => {
+        invalidateContextCache();
+        if (!allowStopped || controller.signal.reason !== 'user-cancel') throwIfSignalAborted(controller.signal);
+        assertMediaOperationCurrent(messageId, message, requestScope, key, controller);
+        if (!ownsUI() || message.swipe_info?.[getMessageSwipeId(message)] !== swipeInfo
+            || (!sourceCommitted && !isImageSourceSelectionCurrent(message, selection))
+            || (sourceCommitted && ['mes', 'display_text'].some(sourceKey => getMessageTagSource(message, sourceKey) !== selection[sourceKey]))) {
+            const error = new Error('Image regeneration target changed');
+            error.name = 'AbortError';
+            throw error;
+        }
+    };
+    const replaceImage = replacement => {
+        const focusReplacement = loadingPlaceholder.contains(document.activeElement);
+        wrapper.replaceWith(replacement);
+        if (focusReplacement) replacement.querySelector('button')?.focus({ preventScroll: true });
+    };
 
     const statusEl = loadingPlaceholder.querySelector('.iig-status');
     const setStatus = (text) => {
+        assertCurrent();
         if (statusEl && statusEl.isConnected) statusEl.textContent = text;
     };
     const restorePreviousImage = () => {
-        if (!loadingPlaceholder.isConnected) return;
-        if (sourceHint) previousImg._iigSourceHint = { ...sourceHint };
-        const restored = previousImg.classList.contains('iig-error-image')
-            ? wrapPlaceholderWithRetry(previousImg)
-            : wrapImageWithActions(previousImg, { promptModel: promptModelImage, sourceHint });
-        loadingPlaceholder.replaceWith(restored);
+        if (ownsUI()) wrapper.hidden = wasHidden;
     };
-
-    // Exact source identity keeps distinct images with identical instructions independent.
-    const operationTag = resolvedSource?.tag || { fullMatch: instruction || data.prompt || '', prompt: data.prompt || '' };
-    const requestScope = buildProcessingKey(messageId);
-    const { controller, key } = beginGeneration(messageId, operationTag);
-    tagAbortControllers.set(tagId, controller); // enable Stop button for this placeholder
+    const lockStop = () => {
+        const stop = loadingPlaceholder.querySelector('.iig-stop-btn');
+        if (stop) stop.disabled = true;
+        tagAbortControllers.delete(tagId);
+    };
+    const commitPath = async (imagePath, allowStopped = false) => {
+        await queueSingleImageCommit(message, async () => {
+            assertCurrent(allowStopped);
+            const currentTag = { ...selection.tag };
+            const source = getMessageTagSource(message, currentTag.sourceKey);
+            currentTag.occurrence = source.slice(0, currentTag.sourceIndex).split(currentTag.fullMatch).length - 1;
+            const commitSnapshot = snapshotSingleImageSource(message, currentTag);
+            const replacement = currentTag.isNewFormat
+                ? replaceSrcInTag(currentTag.fullMatch, escapeAttr(imagePath))
+                : `<img data-iig-instruction='${sanitizeForSingleQuotedAttribute(JSON.stringify(buildInstructionData(currentTag)))}' src="${escapeAttr(imagePath)}">`;
+            lockStop();
+            await commitSingleImageSource(message, commitSnapshot,
+                () => !!replacement && applySingleImageSourceReplacement(message, commitSnapshot, replacement),
+                () => context.saveChat(), () => {
+                    invalidateContextCache();
+                    return ownsUI() && message.swipe_info?.[getMessageSwipeId(message)] === swipeInfo;
+                });
+            sourceCommitted = true;
+        });
+    };
+    const showFreshFailure = async (text, allowStopped = false) => {
+        await commitPath(getErrorImagePath(), allowStopped);
+        assertCurrent(allowStopped);
+        const errorImg = createErrorPlaceholder(tagId, text, resolvedSource.tag);
+        errorImg.setAttribute('data-iig-instruction', instruction);
+        replaceImage(wrapPlaceholderWithRetry(errorImg));
+    };
 
     try {
         const dataUrl = await generateImageWithRetry(
@@ -7266,35 +7523,13 @@ async function regenerateSingleImage(imgElement) {
         );
 
         setStatus(iigT('iig_saving'));
-        assertMediaOperationCurrent(messageId, message, requestScope, key, controller);
+        assertCurrent();
         const imagePath = await saveImageToFile(dataUrl, controller.signal);
-        assertMediaOperationCurrent(messageId, message, requestScope, key, controller);
+        assertCurrent();
 
-        await queueSingleImageCommit(message, async () => {
-            assertMediaOperationCurrent(messageId, message, requestScope, key, controller);
-            if (resolvedSource?.tag) {
-                const currentTag = await resolveCurrentSingleImageTag(message, sourceSnapshot);
-                assertMediaOperationCurrent(messageId, message, requestScope, key, controller);
-                const commitSnapshot = snapshotSingleImageSource(message, currentTag);
-                const replacement = currentTag && replaceSrcInTag(currentTag.fullMatch, escapeAttr(imagePath));
-                await commitSingleImageSource(
-                    message,
-                    commitSnapshot,
-                    () => !!replacement && applySingleImageSourceReplacement(message, commitSnapshot, replacement),
-                    () => context.saveChat(),
-                );
-                committedSourceHint = sourceHintFromTag({ ...currentTag, fullMatch: replacement });
-                return;
-            }
-            const commitSnapshot = snapshotSingleImageSource(message);
-            await commitSingleImageSource(message, commitSnapshot, () => {
-                if (!prevSrc) return false;
-                replaceSrcEverywhere(message, prevSrc, escapeAttr(imagePath));
-                return true;
-            }, () => context.saveChat());
-        });
+        await commitPath(imagePath);
 
-        if (_iigDisposed) return;
+        assertCurrent();
         const newImg = document.createElement('img');
         newImg.className = 'iig-generated-image';
         newImg.src = imagePath;
@@ -7302,7 +7537,7 @@ async function regenerateSingleImage(imgElement) {
         newImg.title = iigT('iig_imageDetails', { style: data.style || '', prompt: data.prompt || '' });
         newImg.setAttribute('data-iig-instruction', instruction);
         unregisterPlaceholderTick(loadingPlaceholder);
-        loadingPlaceholder.replaceWith(wrapImageWithActions(newImg, { promptModel: promptModelImage, sourceHint: committedSourceHint }));
+        replaceImage(wrapImageWithActions(newImg));
 
         sessionGenCount++;
         updateSessionStats();
@@ -7311,30 +7546,25 @@ async function regenerateSingleImage(imgElement) {
             playDesktopCompletionSound();
         }
         scheduleWrapPass(); // re-wrap after ST re-renders from mes
-        toastr.success(sanitizeForHtml(iigT('iig_imageRegenerated')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
+        toastr.success(sanitizeForHtml(preparedSource ? iigT('iig_imageReady', { index: preparedSource.index + 1, count: preparedSource.count }) : iigT('iig_imageRegenerated')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
+        return true;
     } catch (error) {
         const isAbort = error?.name === 'AbortError' || /aborted/i.test(error?.message || '');
         const isUserCancel = error === 'user-cancel' || error?.reason === 'user-cancel' || controller.signal.reason === 'user-cancel';
-        if (_iigDisposed) return;
+        invalidateContextCache();
+        if (!ownsUI()) return;
 
-        // User Stop: restore the PREVIOUS image (mes was never changed, so nothing
-        // to persist). Falls back to error.svg only if there was no real image.
+        // Fresh pending tags need a persisted error image so Retry retains source identity.
         if (isUserCancel) {
             iigLog('INFO', 'Single image regeneration stopped by user');
             unregisterPlaceholderTick(loadingPlaceholder);
-            if (prevIsRealImage) {
-                const restored = document.createElement('img');
-                restored.className = 'iig-generated-image';
-                restored.src = prevSrc;
-                restored.alt = prevAlt;
-                if (prevTitle) restored.title = prevTitle;
-                restored.setAttribute('data-iig-instruction', instruction);
-                loadingPlaceholder.replaceWith(wrapImageWithActions(restored, { promptModel: promptModelImage, sourceHint }));
-            } else {
-                const stopped = createErrorPlaceholder(tagId, iigT('iig_stoppedRetry'), { fullMatch: `data-iig-instruction='${instruction}'` });
-                loadingPlaceholder.replaceWith(wrapPlaceholderWithRetry(stopped));
+            restorePreviousImage();
+            if (fresh && isImageSourceSelectionCurrent(message, selection)) {
+                try { await showFreshFailure(iigT('iig_stoppedRetry'), true); }
+                catch (_) { /* Keep the original pending source on a save conflict. */ }
             }
-            toastr.info(sanitizeForHtml(iigT('iig_generationStopped')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
+            if (_iigDisposed || !isMessageImageScopeCurrent(context, message, messageId, requestScope)) return;
+            toastr.info(sanitizeForHtml(iigT('iig_generationStopped')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
             return;
         }
 
@@ -7349,28 +7579,37 @@ async function regenerateSingleImage(imgElement) {
             unregisterPlaceholderTick(loadingPlaceholder);
             restorePreviousImage();
             const text = iigT(error.code === 'IIG_STALE_SOURCE' ? 'iig_sourceChanged' : 'iig_chatSaveFailed');
-            toastr.error(sanitizeForHtml(text), sanitizeForHtml(iigT('iig_title')));
+            toastr.error(sanitizeForHtml(text), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
             return;
         }
         iigLog('ERROR', 'Single image regeneration failed:', error.message);
 
-        const errorImg = document.createElement('img');
-        errorImg.className = 'iig-error-image';
-        errorImg.src = getErrorImagePath();
-        errorImg.alt = iigT('iig_generationError');
-        errorImg.title = iigT('iig_error', { error: iigErrorText(error) });
-        errorImg.setAttribute('data-iig-instruction', instruction);
-
-        unregisterPlaceholderTick(loadingPlaceholder);
-        loadingPlaceholder.replaceWith(wrapPlaceholderWithRetry(errorImg));
+        restorePreviousImage();
+        if (fresh && isImageSourceSelectionCurrent(message, selection)) {
+            try {
+                await showFreshFailure(iigErrorText(error));
+            } catch (_) { /* Retain the pending source if saving its error state fails. */ }
+        }
+        if (_iigDisposed || !isMessageImageScopeCurrent(context, message, messageId, requestScope)) return;
 
         sessionErrorCount++;
         updateSessionStats();
-        toastr.error(sanitizeForHtml(iigT('iig_regenerationFailed', { error: iigErrorText(error) })), sanitizeForHtml(iigT('iig_title')));
+        toastr.error(sanitizeForHtml(iigT(preparedSource ? 'iig_generationFailed' : 'iig_regenerationFailed', { error: iigErrorText(error) })), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         maybeSuggestFix(error);
     } finally {
+        const restoreFocus = loadingPlaceholder.contains(document.activeElement);
+        invalidateContextCache();
+        if (ownsUI()) {
+            wrapper.hidden = wasHidden;
+            controls.forEach(({ button, disabled }) => { button.disabled = disabled; });
+            if (restoreFocus && focusedControl?.isConnected) focusedControl.focus({ preventScroll: true });
+        }
+        if (wrapper._iigRegenerateController === controller) delete wrapper._iigRegenerateController;
+        unregisterPlaceholderTick(loadingPlaceholder);
+        loadingPlaceholder.remove();
         tagAbortControllers.delete(tagId);
         endGeneration(key, controller);
+        selection.release();
     }
 }
 
@@ -7438,45 +7677,19 @@ function createErrorPlaceholder(tagId, errorMessage, tagInfo) {
 }
 
 /**
- * Wrap an error placeholder <img> with a RETRY-ONLY action button (no download).
- * Click retries via the single-image regenerator. Retry needs the preserved
- * data-iig-instruction attribute.
+ * Wrap an error placeholder with retry and rewrite controls (no download).
+ * Both actions need the preserved data-iig-instruction attribute.
  */
 function wrapPlaceholderWithRetry(imgElement) {
     if (_iigDisposed) return imgElement;
-    if (imgElement.parentElement?.classList.contains('iig-image-wrapper')) return imgElement.parentElement;
-
-    const canRetry = imgElement.hasAttribute('data-iig-instruction');
-    if (!canRetry) return imgElement; // nothing to retry with — leave bare
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'iig-image-wrapper iig-placeholder-wrapper';
-
-    const btnRegen = document.createElement('button');
-    btnRegen.className = 'iig-action-btn iig-action-regen';
-    btnRegen.innerHTML = SVG_ICON_REGENERATE;
-    btnRegen.title = iigT('iig_retry');
-    btnRegen.setAttribute('aria-label', iigT('iig_retryImage'));
-    btnRegen.type = 'button';
-
-    if (imgElement.parentElement) imgElement.replaceWith(wrapper);
-    wrapper.appendChild(imgElement);
-    wrapper.appendChild(btnRegen);
-
-    bindIig(btnRegen, 'click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        return regenerateSingleImage(imgElement);
-    });
-
-    bindTapImageActions(wrapper);
-
-    return wrapper;
+    if (!imgElement.hasAttribute('data-iig-instruction')) return imgElement;
+    return wrapImageWithActions(imgElement, true);
 }
 
 /** Process all image-gen tags in a message: parse, generate, replace in mes, save. */
 async function processMessageTags(messageId, options = {}) {
     if (_iigDisposed) return false;
+    invalidateContextCache();
     const context = getContext();
     const settings = getSettings();
 
@@ -7499,6 +7712,8 @@ async function processMessageTags(messageId, options = {}) {
     // Race guard: claim the slot before any await so a second render can't
     // pass the has() check and start a concurrent generation.
     processingMessages.add(procKey);
+    const batchToken = Symbol(procKey);
+    _regenBatchTokens.set(procKey, batchToken);
 
     try {
         const message = context.chat[messageId];
@@ -7508,9 +7723,10 @@ async function processMessageTags(messageId, options = {}) {
             return false;
         }
 
-        const parsedTags = await parseMessageImageTags(message, { checkExistence: true });
-        if (_iigDisposed) return false;
-        const tags = selectTargetMessageTags(parsedTags, options.target);
+        const swipe = message.swipe_info?.[getMessageSwipeId(message)];
+        const tags = await parseMessageImageTags(message, { checkExistence: true });
+        if (!isMessageImageScopeCurrent(context, message, messageId, procKey)
+            || message.swipe_info?.[getMessageSwipeId(message)] !== swipe) return false;
         iigLog('DEBUG:tag', `parseMessageImageTags returned: ${tags.length} tags`);
         if (tags.length > 0) {
             iigLog('DEBUG:tag', `First tag: ${JSON.stringify(tags[0]).substring(0, 200)}`);
@@ -7522,12 +7738,12 @@ async function processMessageTags(messageId, options = {}) {
         }
 
         iigLog('DEBUG:tag', `Found ${tags.length} image tag(s) in message ${procKey}`);
-        toastr.info(sanitizeForHtml(iigT('iig_tagsFound', { count: tags.length })), sanitizeForHtml(iigT('iig_title')), { timeOut: 3000 });
+        toastr.info(sanitizeForHtml(iigT('iig_tagsFound', { count: tags.length })), sanitizeForHtml(iigT('iig_title')), { timeOut: 3000, escapeHtml: false });
 
         const messageElement = document.querySelector(`#chat .mes[mesid="${messageId}"]`);
         if (!messageElement) {
             iigLog('ERROR', 'Message element not found for ID:', messageId);
-            toastr.error(sanitizeForHtml(iigT('iig_messageElementMissing')), sanitizeForHtml(iigT('iig_title')));
+            toastr.error(sanitizeForHtml(iigT('iig_messageElementMissing')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
             return false;
         }
 
@@ -7536,549 +7752,133 @@ async function processMessageTags(messageId, options = {}) {
             return false;
         }
 
-        if (options.canAccept && !options.canAccept()) return false;
-        options.onAccepted?.();
         await _processMessageTagsInner(context, message, messageId, procKey, tags, mesTextEl);
         return true;
     } finally {
-        processingMessages.delete(procKey);
+        if (_regenBatchTokens.get(procKey) === batchToken) {
+            _regenBatchTokens.delete(procKey);
+            processingMessages.delete(procKey);
+        }
+    }
+}
+
+function isMessageImageScopeCurrent(context, message, messageId, scope) {
+    invalidateContextCache();
+    const current = getContext();
+    return !_iigDisposed && current?.chat === context.chat && current.chat[messageId] === message
+        && current.characterId === context.characterId && current.groupId === context.groupId
+        && buildProcessingKey(messageId) === scope;
+}
+
+function findBatchImageTarget(message, tag, mesTextEl) {
+    if (!tag.isNewFormat) return null;
+    const display = getMessageTagSource(message, 'display_text');
+    const source = display || getMessageTagSource(message, 'mes');
+    const index = display && tag.sourceKey !== 'display_text'
+        ? findTagOccurrenceIndex(display, tag.fullMatch, tag.occurrence, findPromptModelSidecarRange(display))
+        : tag.sourceIndex;
+    if (index < 0 || source.slice(index, index + tag.fullMatch.length) !== tag.fullMatch) return null;
+    const template = document.createElement('template');
+    template.innerHTML = source;
+    const stored = Array.from(template.content.querySelectorAll('img[data-iig-instruction]'));
+    const rendered = Array.from(mesTextEl.querySelectorAll('img[data-iig-instruction]'));
+    if (stored.length !== rendered.length) return null;
+    template.innerHTML = source.slice(0, index);
+    const ordinal = template.content.querySelectorAll('img[data-iig-instruction]').length;
+    const img = rendered[ordinal];
+    try {
+        if (!img || (img.getAttribute('src') || '') !== (stored[ordinal]?.getAttribute('src') || '')
+            || JSON.stringify(parseInstructionObject(img.getAttribute('data-iig-instruction')))
+                !== JSON.stringify(parseInstructionObject(stored[ordinal].getAttribute('data-iig-instruction')))) return null;
+    } catch (_) { return null; }
+    return img;
+}
+
+// Called synchronously by map: each target is retained and claimed before any request awaits.
+async function regenerateBatchImage(message, messageId, tag, target, mesTextEl, index, count) {
+    if (_iigDisposed || !mesTextEl.isConnected) return false;
+    const context = getContext(), scope = buildProcessingKey(messageId);
+    const source = getMessageTagSource(message, tag.sourceKey);
+    if (!tag.isNewFormat) {
+        target = document.createElement('img');
+        target.src = '[IMG:GEN]';
+        const escaped = tag.fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/"/g, '(?:"|&quot;)');
+        if (!replaceFirstTextMatchWithElement(mesTextEl, new RegExp(escaped), target)) return false;
+    }
+    if (!target || target.hasAttribute('data-iig-claimed')) return false;
+    target.setAttribute('data-iig-claimed', '1');
+    try {
+        return await regenerateSingleImage(target, { messageId, message, tag, index, count });
+    } finally {
+        target.removeAttribute('data-iig-claimed');
+        if (!tag.isNewFormat && target.isConnected && isMessageImageScopeCurrent(context, message, messageId, scope)
+            && getMessageTagSource(message, tag.sourceKey) === source) {
+            const wrapper = target.closest('.iig-image-wrapper');
+            (wrapper || target).replaceWith(document.createTextNode(tag.fullMatch));
+        }
     }
 }
 
 /** Inner processor; the caller guarantees processing-slot cleanup. */
 async function _processMessageTagsInner(context, message, messageId, procKey, tags, mesTextEl) {
-    
-    const processTag = async (tag, index) => {
-        const tagId = `iig-${messageId}-${index}`;
-        const requestScope = procKey;
-        
-        iigLog('DEBUG:tag', `Processing tag ${index}: ${tag.fullMatch.substring(0, 50)}`);
-        
-        const loadingPlaceholder = createLoadingPlaceholder(tagId, FETCH_TIMEOUT);
-        let targetElement = null;
-
-        if (tag.isNewFormat) {
-            const allImgs = mesTextEl.querySelectorAll('img[data-iig-instruction]');
-            iigLog('DEBUG:tag', `Searching for img element. Found ${allImgs.length} img[data-iig-instruction] elements in DOM`);
-            const targetedRender = Number.isInteger(tag.renderedIndex);
-            const indexedTarget = selectTargetRenderedImage(allImgs, tag.renderedIndex);
-            if (targetedRender && indexedTarget) {
-                targetElement = indexedTarget;
-                indexedTarget.setAttribute('data-iig-claimed', '1');
-            }
-
-            const searchPrompt = tag.prompt.substring(0, 30);
-            if (!targetedRender) iigLog('DEBUG:tag', `Searching for prompt starting with: "${searchPrompt}"`);
-
-            for (const img of allImgs) {
-                if (targetedRender) break;
-                if (img.hasAttribute('data-iig-claimed')) continue; // taken by a parallel tag
-                const instruction = img.getAttribute('data-iig-instruction');
-                const src = img.getAttribute('src') || '';
-                iigLog('DEBUG:tag', `DOM img - src: "${src.substring(0, 50)}", instruction (first 100): "${instruction?.substring(0, 100)}"`);
-                
-                if (instruction) {
-                    const decodedInstruction = instruction
-                        .replace(/&quot;/g, '"')
-                        .replace(/&apos;/g, "'")
-                        .replace(/&#39;/g, "'")
-                        .replace(/&#34;/g, '"')
-                        .replace(/&amp;/g, '&');
-                    
-                    const normalizedSearchPrompt = searchPrompt
-                        .replace(/&quot;/g, '"')
-                        .replace(/&apos;/g, "'")
-                        .replace(/&#39;/g, "'")
-                        .replace(/&#34;/g, '"')
-                        .replace(/&amp;/g, '&');
-                    
-                    if (decodedInstruction.includes(normalizedSearchPrompt)) {
-                        iigLog('DEBUG:tag', `Found img element via decoded instruction match`);
-                        targetElement = img;
-                        img.setAttribute('data-iig-claimed', '1');
-                        break;
-                    }
-                    
-                    try {
-                        const instructionData = parseInstructionObject(decodedInstruction);
-                        if (instructionData.prompt && instructionData.prompt.substring(0, 30) === tag.prompt.substring(0, 30)) {
-                            iigLog('DEBUG:tag', `Found img element via JSON prompt match`);
-                            targetElement = img;
-                            img.setAttribute('data-iig-claimed', '1');
-                            break;
-                        }
-                    } catch (e) {
-                        // Parse failed; try next strategy.
-                    }
-                    
-                    if (instruction.includes(searchPrompt)) {
-                        iigLog('DEBUG:tag', `Found img element via raw instruction match`);
-                        targetElement = img;
-                        img.setAttribute('data-iig-claimed', '1');
-                        break;
-                    }
-                }
-            }
-            
-            if (!targetElement && !targetedRender) {
-                iigLog('DEBUG:tag', `Prompt matching failed, trying src marker matching...`);
-                for (const img of allImgs) {
-                    const src = img.getAttribute('src') || '';
-                    if (src.includes('[IMG:GEN]') || src.includes('[IMG:ERROR]') || src === '' || src === '#') {
-                        iigLog('DEBUG:tag', `Found img element with generation marker in src: "${src}"`);
-                        targetElement = img;
-                        break;
-                    }
-                }
-            }
-            
-            if (!targetElement && !targetedRender) {
-                iigLog('DEBUG:tag', `Trying broader img search...`);
-                const allImgsInMes = mesTextEl.querySelectorAll('img');
-                for (const img of allImgsInMes) {
-                    const src = img.getAttribute('src') || '';
-                    if (src.includes('[IMG:GEN]') || src.includes('[IMG:ERROR]')) {
-                        iigLog('DEBUG:tag', `Found img via broad search with marker src: "${src.substring(0, 50)}"`);
-                        targetElement = img;
-                        break;
-                    }
-                }
-            }
-        } else {
-            // [IMG:GEN:{...}] tag — swap in a placeholder span.
-            //
-            // Text-node surgery, NOT an innerHTML round-trip: mesTextEl holds
-            // model-authored HTML, and reassigning innerHTML re-parses the
-            // whole subtree. The &quot; alternation is kept because the
-            // tag may have been persisted with entity-encoded quotes.
-            const tagEscaped = tag.fullMatch
-                .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-                .replace(/"/g, '(?:"|&quot;)');
-            const tagRegex = new RegExp(tagEscaped, 'g');
-
-            const placeholderSpan = document.createElement('span');
-            placeholderSpan.setAttribute('data-iig-placeholder', tagId);
-
-            targetElement = replaceFirstTextMatchWithElement(mesTextEl, tagRegex, placeholderSpan);
-            if (targetElement) {
-                iigLog('DEBUG:tag', `Legacy tag replaced with placeholder span`);
-            }
-            
-            if (!targetElement) {
-                const allImgs = mesTextEl.querySelectorAll('img');
-                for (const img of allImgs) {
-                    if (img.src && img.src.includes('[IMG:GEN:')) {
-                        targetElement = img;
-                        iigLog('DEBUG:tag', `Found img with legacy tag in src`);
-                        break;
-                    }
-                }
-            }
-        }
-        
-        if (targetElement) {
-            const parent = targetElement.parentElement;
-            if (parent) {
-                const parentStyle = window.getComputedStyle(parent);
-                if (parentStyle.display === 'flex' || parentStyle.display === 'grid') {
-                    loadingPlaceholder.style.alignSelf = 'center';
-                }
-            }
-            targetElement.replaceWith(loadingPlaceholder);
-            iigLog('DEBUG:tag', `Loading placeholder shown (replaced target element)`);
-        } else {
-            iigLog('WARN', `Could not find target element, appending placeholder as fallback`);
-            mesTextEl.appendChild(loadingPlaceholder);
-        }
-        
-        const statusEl = loadingPlaceholder.querySelector('.iig-status');
-        const setStatus = (text) => {
-            if (statusEl && statusEl.isConnected) statusEl.textContent = text;
-        };
-
-        // Abort controller: a manual regenerate during auto-gen cancels us.
-        const { controller, key } = beginGeneration(messageId, tag);
-        tagAbortControllers.set(tagId, controller); // enable Stop button for this placeholder
-
-        try {
-            const dataUrl = await generateImageWithRetry(
-                tag.prompt,
-                tag.style,
-                setStatus,
-                {
-                    aspectRatio: tag.aspectRatio,
-                    imageSize: tag.imageSize,
-                    quality: tag.quality,
-                    preset: tag.preset,
-                    signal: controller.signal,
-                }
-            );
-
-            setStatus(iigT('iig_saving'));
-            assertMediaOperationCurrent(messageId, message, requestScope, key, controller);
-            const imagePath = await saveImageToFile(dataUrl, controller.signal);
-            assertMediaOperationCurrent(messageId, message, requestScope, key, controller);
-
-            const img = document.createElement('img');
-            img.className = 'iig-generated-image';
-            img.src = imagePath;
-            img.alt = tag.prompt;
-            img.title = iigT('iig_imageDetails', { style: tag.style, prompt: tag.prompt });
-
-            if (tag.isNewFormat) {
-                const instructionMatch = tag.fullMatch.match(/data-iig-instruction\s*=\s*(['"])([\s\S]*?)\1/i);
-                if (instructionMatch) {
-                    img.setAttribute('data-iig-instruction', instructionMatch[2]);
-                }
-            }
-
-            unregisterPlaceholderTick(loadingPlaceholder);
-            const wrappedImg = wrapImageWithActions(img, { sourceTag: tag });
-            loadingPlaceholder.replaceWith(wrappedImg);
-
-            // Defer the mes write to the serial-apply loop (avoids R-M-W races).
-            let replacement;
-            if (tag.isNewFormat) {
-                replacement = tag.fullMatch.replace(/src\s*=\s*(['"])[^'"]*\1/i, `src="${escapeAttr(imagePath)}"`);
-            } else {
-                replacement = `[IMG:✓:${escapeAttr(imagePath)}]`;
-            }
-
-            iigLog('DEBUG:tag', `Successfully generated image for tag ${index}`);
-            sessionGenCount++;
-            updateSessionStats();
-            toastr.success(sanitizeForHtml(iigT('iig_imageReady', { index: index + 1, count: tags.length })), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
-
-            return { tag, replacement, ok: true };
-        } catch (error) {
-            const isAbort = error?.name === 'AbortError' || /aborted/i.test(error?.message || '');
-            const isUserCancel = error === 'user-cancel' || error?.reason === 'user-cancel' || controller.signal.reason === 'user-cancel';
-
-            // Supersede (newer gen took over) — silent; the newer path owns DOM/mes.
-            if (isAbort && !isUserCancel) {
-                iigLog('INFO', `Tag ${index} aborted (superseded)`);
-                unregisterPlaceholderTick(loadingPlaceholder);
-                return { tag, replacement: null, ok: false };
-            }
-
-            // User Stop on a FRESH generation (no previous image) -> error.svg.
-            if (isUserCancel) {
-                iigLog('INFO', `Tag ${index} stopped by user`);
-                const stoppedPlaceholder = createErrorPlaceholder(tagId, iigT('iig_stoppedRetry'), tag);
-                unregisterPlaceholderTick(loadingPlaceholder);
-                loadingPlaceholder.replaceWith(wrapPlaceholderWithRetry(stoppedPlaceholder));
-                let replacement;
-                if (tag.isNewFormat) {
-                    replacement = tag.fullMatch.replace(/src\s*=\s*(['"])[^'"]*\1/i, `src="${escapeAttrPath(getErrorImagePath())}"`);
-                } else {
-                    replacement = `[IMG:ERROR:stopped]`;
-                }
-                toastr.info(sanitizeForHtml(iigT('iig_generationStopped')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
-                return { tag, replacement, ok: false };
-            }
-
-            iigLog('ERROR', `Failed to generate image for tag ${index}:`, error.message);
-
-            const errorPlaceholder = createErrorPlaceholder(tagId, iigErrorText(error), tag);
-            unregisterPlaceholderTick(loadingPlaceholder);
-            loadingPlaceholder.replaceWith(wrapPlaceholderWithRetry(errorPlaceholder));
-
-            let replacement;
-            if (tag.isNewFormat) {
-                replacement = tag.fullMatch.replace(/src\s*=\s*(['"])[^'"]*\1/i, `src="${escapeAttrPath(getErrorImagePath())}"`);
-            } else {
-                replacement = `[IMG:ERROR:${sanitizeForHtml(iigErrorText(error).substring(0, 50))}]`;
-            }
-            iigLog('INFO', `Marked tag as failed in message source`);
-            sessionErrorCount++;
-            updateSessionStats();
-
-            toastr.error(sanitizeForHtml(iigT('iig_generationFailed', { error: iigErrorText(error) })), sanitizeForHtml(iigT('iig_title')));
-            maybeSuggestFix(error);
-
-            return { tag, replacement, ok: false };
-        } finally {
-            tagAbortControllers.delete(tagId);
-            endGeneration(key, controller);
-        }
-    };
-
-    
-    let results = [];
-    try {
-        // Generate in parallel, collect replacements — don't mutate message.mes yet.
-        // Each tag owns its own tagId/placeholder/AbortController, so a per-image
-        // Stop targets only that generation.
-        results = await Promise.all(tags.map((tag, index) => processTag(tag, index)));
-    } finally {
-        iigLog('DEBUG:chat', `Finished processing message ${procKey}`);
-
-        // Clear transient claim markers so a later re-process starts fresh.
-        try { mesTextEl?.querySelectorAll('[data-iig-claimed]').forEach(el => el.removeAttribute('data-iig-claimed')); } catch (_) {}
-
-        // Apply replacements serially after all tasks settle; re-read the live
-        // message in case ST mutated it during generation.
-        const liveMessage = context.chat[messageId];
-        const batchIsCurrent = !_iigDisposed && liveMessage === message && buildProcessingKey(messageId) === procKey;
-        if (batchIsCurrent) {
-            let applied = 0;
-            for (const r of results) {
-                if (r && r.tag && typeof r.replacement === 'string') {
-                    try {
-                        replaceTagInMessageSource(liveMessage, r.tag, r.replacement);
-                        applied++;
-                    } catch (e) {
-                        iigLog('WARN', `Failed to apply replacement for tag: ${e.message}`);
-                    }
-                }
-            }
-            iigLog('DEBUG:tag', `Applied ${applied}/${results.length} tag replacements to message source`);
-
-            // Stamp cooldown BEFORE saveChat to block CHARACTER_MESSAGE_RENDERED re-entry.
-            markRecentlyProcessed(procKey);
-
-            await context.saveChat();
-            const hasSuccessfulMedia = results.some(result => result?.ok === true);
-            if (hasSuccessfulMedia && getSettings().enabled && context.chat[messageId] === liveMessage
-                && buildProcessingKey(messageId) === procKey) {
-                playDesktopCompletionSound();
-            }
-        }
-
-        // DO NOT call messageFormatting() or mutate innerHTML here: it can
-        // stack-overflow on complex HTML and re-fire CHARACTER_MESSAGE_RENDERED.
-        // Images are already swapped in-place; ST re-formats on the next render.
-    }
+    const targets = tags.map(tag => findBatchImageTarget(message, tag, mesTextEl));
+    const processTag = (tag, index) => regenerateBatchImage(message, messageId, tag, targets[index], mesTextEl, index, tags.length);
+    await Promise.all(tags.map((tag, index) => processTag(tag, index)));
+    if (isMessageImageScopeCurrent(context, message, messageId, procKey)) markRecentlyProcessed(procKey);
 }
 
-/** Regenerate every image in a message (user-triggered). Matches tags to <img> by index. */
+/** Regenerate every image in the active message source. */
 async function regenerateMessageImages(messageId) {
     if (_iigDisposed) return;
+    invalidateContextCache();
     const context = getContext();
     const message = context.chat[messageId];
     
     if (!message) {
-        toastr.error(sanitizeForHtml(iigT('iig_messageMissing')), sanitizeForHtml(iigT('iig_title')));
+        toastr.error(sanitizeForHtml(iigT('iig_messageMissing')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         return;
     }
     
-    const tags = await parseMessageImageTags(message, { forceAll: true });
-    if (_iigDisposed) return;
-    
-    if (tags.length === 0) {
-        toastr.warning(sanitizeForHtml(iigT('iig_noTags')), sanitizeForHtml(iigT('iig_title')));
-        return;
-    }
-    
-    iigLog('INFO', `Regenerating ${tags.length} images in message ${messageId}`);
-    toastr.info(sanitizeForHtml(iigT('iig_regeneratingImages', { count: tags.length })), sanitizeForHtml(iigT('iig_title')));
-
     const regenKey = buildProcessingKey(messageId);
+    if (processingMessages.has(regenKey)) return;
     processingMessages.add(regenKey);
-
-    const messageElement = document.querySelector(`#chat .mes[mesid="${messageId}"]`);
-    if (!messageElement) {
-        processingMessages.delete(regenKey);
-        return;
-    }
-
-    const mesTextEl = messageElement.querySelector('.mes_text');
-    if (!mesTextEl) {
-        processingMessages.delete(regenKey);
-        return;
-    }
     const batchToken = Symbol(regenKey);
     _regenBatchTokens.set(regenKey, batchToken);
-    
-    const regenTag = async (tag, index) => {
-        const tagId = `iig-regen-${messageId}-${index}`;
-        // Hoisted so the catch can swap/restore.
-        let loadingPlaceholder = null;
-        let prevSrc = '', prevAlt = '', prevTitle = '', instruction = null, prevIsRealImage = false, promptModelImage = false;
+    try {
+        const swipe = message.swipe_info?.[getMessageSwipeId(message)];
+        const tags = await parseMessageImageTags(message, { forceAll: true });
+        if (!isMessageImageScopeCurrent(context, message, messageId, regenKey)
+            || message.swipe_info?.[getMessageSwipeId(message)] !== swipe) return;
 
-        try {
-            // Match image to tag by prompt, not index (DOM order may differ).
-            const allInstructionImgs = mesTextEl.querySelectorAll('img[data-iig-instruction]');
-            let existingImg = null;
-            const tagPromptHead = (tag.prompt || '').substring(0, 30);
-            for (const img of allInstructionImgs) {
-                const rawInstr = img.getAttribute('data-iig-instruction') || '';
-                const decoded = rawInstr
-                    .replace(/&quot;/g, '"')
-                    .replace(/&apos;/g, "'")
-                    .replace(/&#39;/g, "'")
-                    .replace(/&#34;/g, '"')
-                    .replace(/&amp;/g, '&');
-                if (tagPromptHead && decoded.includes(tagPromptHead)) {
-                    existingImg = img;
-                    break;
-                }
-                try {
-                    const parsed = parseInstructionObject(decoded);
-                    if (parsed?.prompt && parsed.prompt.substring(0, 30) === tagPromptHead) {
-                        existingImg = img;
-                        break;
-                    }
-                } catch (_) {}
-            }
-            // Positional fallback; skip already-claimed imgs so duplicate prompts pick distinct targets.
-            if (!existingImg && allInstructionImgs[index] && !allInstructionImgs[index].hasAttribute('data-iig-claimed')) {
-                existingImg = allInstructionImgs[index];
-            }
-            if (existingImg) existingImg.setAttribute('data-iig-claimed', '1');
-
-            if (existingImg) {
-                instruction = existingImg.getAttribute('data-iig-instruction');
-                promptModelImage = isPromptModelImageElement(existingImg);
-
-                // Capture the PREVIOUS image up front so a user Stop can restore it.
-                prevSrc = existingImg.getAttribute('src') || '';
-                prevAlt = existingImg.getAttribute('alt') || '';
-                prevTitle = existingImg.getAttribute('title') || '';
-                prevIsRealImage = !!prevSrc && !prevSrc.includes('error.svg') && !prevSrc.includes('[IMG:');
-
-                // Replace the wrapper (if present) or the img itself with loading placeholder
-                const existingWrapper = existingImg.closest('.iig-image-wrapper');
-                loadingPlaceholder = createLoadingPlaceholder(tagId);
-                if (existingWrapper) {
-                    existingWrapper.replaceWith(loadingPlaceholder);
-                } else {
-                    existingImg.replaceWith(loadingPlaceholder);
-                }
-                
-                const statusEl = loadingPlaceholder.querySelector('.iig-status');
-                const setStatus = (text) => {
-                    // Drop updates silently if placeholder was detached (chat switch, regen spam).
-                    if (statusEl && statusEl.isConnected) statusEl.textContent = text;
-                };
-
-                // Per-tag abort controller; a second "regenerate all" click cancels in-flight tags.
-                const { controller, key } = beginGeneration(messageId, tag);
-                tagAbortControllers.set(tagId, controller); // enable Stop button for this placeholder
-
-                try {
-                    const dataUrl = await generateImageWithRetry(
-                        tag.prompt,
-                        tag.style,
-                        setStatus,
-                        {
-                            aspectRatio: tag.aspectRatio,
-                            imageSize: tag.imageSize,
-                            quality: tag.quality,
-                            preset: tag.preset,
-                            signal: controller.signal,
-                        }
-                    );
-
-                    setStatus(iigT('iig_saving'));
-                    assertMediaOperationCurrent(messageId, message, regenKey, key, controller);
-                    const imagePath = await saveImageToFile(dataUrl, controller.signal);
-                    assertMediaOperationCurrent(messageId, message, regenKey, key, controller);
-
-                    const img = document.createElement('img');
-                    img.className = 'iig-generated-image';
-                    img.src = imagePath;
-                    img.alt = tag.prompt;
-                    if (instruction) {
-                        img.setAttribute('data-iig-instruction', instruction);
-                    }
-                    unregisterPlaceholderTick(loadingPlaceholder);
-                    const wrappedImg = wrapImageWithActions(img, { promptModel: promptModelImage, sourceTag: tag });
-                    loadingPlaceholder.replaceWith(wrappedImg);
-
-                    const updatedTag = tag.fullMatch.replace(/src\s*=\s*(['"])[^'"]*\1/i, `src="${escapeAttr(imagePath)}"`);
-                    replaceTagInMessageSource(message, tag, updatedTag);
-
-                    toastr.success(sanitizeForHtml(iigT('iig_imageReady', { index: index + 1, count: tags.length })), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
-                    return true;
-                } finally {
-                    tagAbortControllers.delete(tagId);
-                    endGeneration(key, controller);
-                }
-            }
-        } catch (error) {
-            const isUserCancel = error === 'user-cancel' || error?.reason === 'user-cancel';
-            const isAbort = isUserCancel || error?.name === 'AbortError' || /aborted/i.test(error?.message || '');
-
-            // User Stop: restore the PREVIOUS image (mes untouched here, so nothing
-            // to persist). Falls back to error.svg only if there was no real image.
-            if (isUserCancel) {
-                iigLog('INFO', `Regeneration tag ${index} stopped by user`);
-                unregisterPlaceholderTick(loadingPlaceholder);
-                if (loadingPlaceholder?.isConnected) {
-                    if (prevIsRealImage) {
-                        const restored = document.createElement('img');
-                        restored.className = 'iig-generated-image';
-                        restored.src = prevSrc;
-                        restored.alt = prevAlt;
-                        if (prevTitle) restored.title = prevTitle;
-                        if (instruction) restored.setAttribute('data-iig-instruction', instruction);
-                        loadingPlaceholder.replaceWith(wrapImageWithActions(restored, { promptModel: promptModelImage, sourceTag: tag }));
-                    } else {
-                        const stopped = createErrorPlaceholder(tagId, iigT('iig_stoppedRetry'), tag);
-                        loadingPlaceholder.replaceWith(wrapPlaceholderWithRetry(stopped));
-                    }
-                }
-                toastr.info(sanitizeForHtml(iigT('iig_generationStopped')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
-                return false;
-            }
-
-            // Superseded by a newer request; silent.
-            if (isAbort) {
-                iigLog('INFO', `Regeneration tag ${index} aborted (superseded)`);
-                unregisterPlaceholderTick(loadingPlaceholder);
-                return false;
-            }
-            iigLog('ERROR', `Regeneration failed for tag ${index}:`, error.message);
-
-            // Swap the stuck loading placeholder for an error image (else it
-            // spins on "Generating..." forever).
-            if (loadingPlaceholder) {
-                unregisterPlaceholderTick(loadingPlaceholder);
-                if (loadingPlaceholder.isConnected) {
-                    loadingPlaceholder.replaceWith(wrapPlaceholderWithRetry(createErrorPlaceholder(tagId, iigErrorText(error), tag)));
-                }
-            }
-            // Persist the error path so DOM and mes stay in sync on reload.
-            // (This tag was already an error/placeholder image — nothing good is lost.)
-            if (tag.isNewFormat) {
-                const errorTag = tag.fullMatch.replace(/src\s*=\s*(['"])[^'"]*\1/i, `src="${escapeAttrPath(getErrorImagePath())}"`);
-                replaceTagInMessageSource(message, tag, errorTag);
-            }
-
-            toastr.error(sanitizeForHtml(iigT('iig_error', { error: iigErrorText(error) })), sanitizeForHtml(iigT('iig_title')));
-            maybeSuggestFix(error);
-            return false;
+        if (tags.length === 0) {
+            toastr.warning(sanitizeForHtml(iigT('iig_noTags')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
+            return;
         }
-        return false;
-    };
 
-    // Regenerate all tags in PARALLEL (each owns its own placeholder/controller).
-    const regenResults = await Promise.all(tags.map((tag, index) => regenTag(tag, index)));
-    
-    // Clear transient claim markers so the next regen pass starts fresh.
-    mesTextEl.querySelectorAll('img[data-iig-claimed]').forEach(img => img.removeAttribute('data-iig-claimed'));
+        iigLog('INFO', `Regenerating ${tags.length} images in message ${messageId}`);
+        toastr.info(sanitizeForHtml(iigT('iig_regeneratingImages', { count: tags.length })), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
 
-    const isCurrentBatch = (_regenBatchTokens.get(regenKey) === batchToken || _iigDisposed)
-        && context.chat[messageId] === message
-        && buildProcessingKey(messageId) === regenKey;
-    if (isCurrentBatch) {
-        _regenBatchTokens.delete(regenKey);
-        processingMessages.delete(regenKey);
-        markRecentlyProcessed(regenKey);
-        await context.saveChat();
-        if (regenResults.some(Boolean) && getSettings().enabled && context.chat[messageId] === message
-            && buildProcessingKey(messageId) === regenKey) {
-            playDesktopCompletionSound();
+        const messageElement = document.querySelector(`#chat .mes[mesid="${messageId}"]`);
+        if (!messageElement) return;
+
+        const mesTextEl = messageElement.querySelector('.mes_text');
+        if (!mesTextEl) return;
+        const targets = tags.map(tag => findBatchImageTarget(message, tag, mesTextEl));
+        const regenTag = (tag, index) => regenerateBatchImage(message, messageId, tag, targets[index], mesTextEl, index, tags.length);
+
+        // Regenerate all tags in PARALLEL (each owns its own placeholder/controller).
+        await Promise.all(tags.map((tag, index) => regenTag(tag, index)));
+        if (isMessageImageScopeCurrent(context, message, messageId, regenKey)) markRecentlyProcessed(regenKey);
+    } finally {
+        if (_regenBatchTokens.get(regenKey) === batchToken) {
+            _regenBatchTokens.delete(regenKey);
+            processingMessages.delete(regenKey);
         }
-        iigLog('INFO', `Regeneration complete for message ${messageId}`);
-        // Re-wrap after ST re-renders from mes, so action buttons survive.
-        scheduleWrapPass();
     }
 }
 
 /** Add a regenerate button to a message's .extraMesButtons menu. */
-function addRegenerateButton(messageElement, messageId) {
+function addRegenerateButton(messageElement) {
     if (_iigDisposed) return;
     if (messageElement.querySelector('.iig-regenerate-btn')) return;
     
@@ -8092,7 +7892,9 @@ function addRegenerateButton(messageElement, messageId) {
     btn.setAttribute('aria-label', iigT('iig_regenerateImages'));
     bindIig(btn, 'click', async (e) => {
         e.stopPropagation();
-        await regenerateMessageImages(messageId);
+        if (!btn.isConnected) return;
+        const id = Number.parseInt(btn.closest('.mes[mesid]')?.getAttribute('mesid') || '', 10);
+        if (Number.isInteger(id)) await regenerateMessageImages(id);
     });
     
     extraMesButtons.appendChild(btn);
@@ -8105,14 +7907,13 @@ function wrapExistingImages() {
     const images = document.querySelectorAll('#chat .iig-generated-image, #chat img[data-iig-instruction]');
     let count = 0;
     for (const img of images) {
-        if (img.parentElement?.classList.contains('iig-image-wrapper')) continue;
         const src = img.getAttribute('src') || '';
         if (!src || src === '[IMG:GEN]') continue;
         // Error placeholders persist as plain <img data-iig-instruction
-        // src=".../error.svg">. Give them the error class + a RETRY-only button.
+        // src=".../error.svg">. Retain retry/rewrite actions without download.
         if (src.includes('error.svg')) {
-            img.classList.add('iig-error-image');
-            img.classList.remove('iig-generated-image');
+            if (!img.classList.contains('iig-error-image')) img.classList.add('iig-error-image');
+            if (img.classList.contains('iig-generated-image')) img.classList.remove('iig-generated-image');
             wrapPlaceholderWithRetry(img);
             continue;
         }
@@ -8149,16 +7950,14 @@ function initImageWrapObserver() {
             const candidates = self.length ? [node, ...descendants] : descendants;
 
             for (const el of candidates) {
-                if (el.parentElement?.classList.contains('iig-image-wrapper')) continue;
-
                 // Generated / reloaded <img>.
                 const src = el.getAttribute('src') || '';
                 // Skip not-yet-generated images (still streaming / placeholder).
                 if (!src || src === '[IMG:GEN]' || src.startsWith('data:') && src.length < 100) continue;
-                // Error placeholders: error class + RETRY-only button.
+                // Failed images retain retry/rewrite actions without download.
                 if (src.includes('error.svg')) {
-                    el.classList.add('iig-error-image');
-                    el.classList.remove('iig-generated-image');
+                    if (!el.classList.contains('iig-error-image')) el.classList.add('iig-error-image');
+                    if (el.classList.contains('iig-generated-image')) el.classList.remove('iig-generated-image');
                     wrapPlaceholderWithRetry(el);
                     continue;
                 }
@@ -8226,7 +8025,7 @@ function addButtonsToExistingMessages() {
         const message = context.chat[messageId];
         
         if (message && !message.is_user) {
-            addRegenerateButton(messageElement, messageId);
+            addRegenerateButton(messageElement);
             addedCount++;
         }
     }
@@ -8256,7 +8055,7 @@ async function onMessageReceived(messageId) {
         const messageElement = document.querySelector(`#chat .mes[mesid="${messageId}"]`);
         if (!messageElement) return;
         
-        addRegenerateButton(messageElement, messageId);
+        addRegenerateButton(messageElement);
         
         await processMessageTags(messageId);
     } finally {
@@ -8389,7 +8188,7 @@ const IIG_UI_I18N = {
         showAllModels: 'Show all models (disable keyword filter)',
         showAllModelsHint: "Enable when your provider's image models are missing from the list.",
         characterReferences: 'Character References',
-        cropOnUpload: 'Crop uploaded references',
+        cropOnUpload: 'Crop uploads (references and packs)',
         referenceOptions: 'Reference Options',
         referenceOptionsSubtitle: 'Matching, scope and send rules',
         referenceHint: 'Up to 4 matching references are sent; NovelAI accepts exactly one. Names support comma-separated aliases.',
@@ -8468,9 +8267,6 @@ const IIG_UI_I18N = {
         verboseConsoleHint: 'Print DEBUG entries to the browser console.',
         exportLogs: 'Export Logs',
         exportLogsHint: 'Export Logs always includes DEBUG entries.',
-        saveSettingsTitle: 'Write extension settings to disk now.',
-        saveSettings: 'Save settings',
-        save: 'Save',
         checkStorageTitle: 'Count files and measure the iig_refs folder on demand.',
         checkStorageAria: 'Check reference storage',
         checkStorage: 'Check ref storage',
@@ -8508,9 +8304,6 @@ const IIG_UI_I18N = {
         chatRefsReset: 'This chat now inherits its references',
         characterRefsReset: 'This character now inherits Global references',
         imageManagerUnavailable: 'Could not open Image Manager (slash command unavailable).',
-        saving: 'Saving…',
-        saved: '✓ Saved',
-        saveFailed: '✗ Error: {detail}',
         checkingStorage: 'Checking reference storage…',
         storageSummary: '{count} file(s) · {size}',
         storageSummaryEstimated: '{count} file(s) · ~{size} ({measured} measured)',
@@ -8571,7 +8364,7 @@ const IIG_UI_I18N = {
         showAllModels: 'Показывать все модели (отключить фильтр по ключевым словам)',
         showAllModelsHint: 'Включите, если модели изображений вашего провайдера отсутствуют в списке.',
         characterReferences: 'Референсы персонажей',
-        cropOnUpload: 'Обрезать загружаемые референсы',
+        cropOnUpload: 'Обрезать загрузки (референсы и наборы)',
         referenceOptions: 'Параметры референсов',
         referenceOptionsSubtitle: 'Сопоставление, область действия и правила отправки',
         referenceHint: 'Отправляется до 4 подходящих референсов; NovelAI принимает ровно один. Для имён можно указать псевдонимы через запятую.',
@@ -8650,9 +8443,6 @@ const IIG_UI_I18N = {
         verboseConsoleHint: 'Выводить записи DEBUG в консоль браузера.',
         exportLogs: 'Экспортировать журнал',
         exportLogsHint: 'Экспорт журнала всегда включает записи DEBUG.',
-        saveSettingsTitle: 'Записать настройки расширения на диск сейчас.',
-        saveSettings: 'Сохранить настройки',
-        save: 'Сохранить',
         checkStorageTitle: 'Подсчитать файлы и размер папки iig_refs по запросу.',
         checkStorageAria: 'Проверить хранилище референсов',
         checkStorage: 'Проверить хранилище',
@@ -8690,9 +8480,6 @@ const IIG_UI_I18N = {
         chatRefsReset: 'Этот чат теперь наследует референсы',
         characterRefsReset: 'Этот персонаж теперь наследует глобальные референсы',
         imageManagerUnavailable: 'Не удалось открыть Image Manager (слеш-команда недоступна).',
-        saving: 'Сохранение…',
-        saved: '✓ Сохранено',
-        saveFailed: '✗ Ошибка: {detail}',
         checkingStorage: 'Проверка хранилища референсов…',
         storageSummary: 'Файлов: {count} · {size}',
         storageSummaryEstimated: 'Файлов: {count} · ~{size} (измерено: {measured})',
@@ -8900,7 +8687,7 @@ function createSettingsUI() {
                                     </div>
                                     <label class="checkbox_label">
                                         <input type="checkbox" id="iig_crop_on_upload" ${settings.cropOnUpload ? 'checked' : ''}>
-                                        <span data-i18n="iig_ui_cropOnUpload">Crop uploaded references</span>
+                                        <span data-i18n="iig_ui_cropOnUpload">Crop uploads (references and packs)</span>
                                     </label>
                                     <div>
                                         <p id="iig_ref_scope_label" class="hint"></p>
@@ -9185,11 +8972,7 @@ function createSettingsUI() {
                         <p class="hint" data-i18n="iig_ui_exportLogsHint">Export Logs always includes DEBUG entries.</p>
                     </details>
                     
-                    <!-- Maintenance: force-flush settings + clear server ref folder. -->
                     <div class="iig-maintenance-row iig-maintenance-row--primary">
-                        <button type="button" id="iig_manual_save" class="menu_button iig-maint-btn" title="Write extension settings to disk now." aria-label="Save settings" data-i18n="[title]iig_ui_saveSettingsTitle;[aria-label]iig_ui_saveSettings">
-                            <i class="fa-solid fa-floppy-disk"></i><span class="iig-maint-label-full" data-i18n="iig_ui_saveSettings">Save settings</span><span class="iig-maint-label-short" aria-hidden="true" data-i18n="iig_ui_save">Save</span>
-                        </button>
                         <button type="button" id="iig_check_ref_storage" class="menu_button iig-maint-btn" title="Count files and measure the iig_refs folder on demand." aria-label="Check reference storage" data-i18n="[title]iig_ui_checkStorageTitle;[aria-label]iig_ui_checkStorageAria">
                             <i class="fa-solid fa-hard-drive"></i><span class="iig-maint-label-full" data-i18n="iig_ui_checkStorage">Check ref storage</span><span class="iig-maint-label-short" aria-hidden="true" data-i18n="iig_ui_storage">Storage</span>
                         </button>
@@ -9197,7 +8980,6 @@ function createSettingsUI() {
                             <i class="fa-solid fa-broom"></i><span class="iig-maint-label-full" data-i18n="iig_ui_clearStorage">Clear refs folder</span><span class="iig-maint-label-short" aria-hidden="true" data-i18n="iig_ui_clear">Clear</span>
                         </button>
                     </div>
-                    <p id="iig_save_status" class="hint" role="status" aria-live="polite" style="text-align:center;font-size:0.85em;"></p>
                     <p id="iig_ref_storage_status" class="hint" role="status" aria-live="polite" style="text-align:center;font-size:0.85em;">${sanitizeForHtml(iigT('iig_ui_storageNotChecked'))}</p>
 
                     <!-- Shown only if ST-ImageManager is installed (feature-detected at render). -->
@@ -9665,7 +9447,7 @@ async function buildPackThumbnail(file, compress = false) {
 }
 
 /** Returns a rejection reason, so a mixed selection reports a per-file tally. */
-async function importPackFile(packId, file) {
+async function importPackFile(packId, file, crop = null) {
     throwIfSignalAborted();
     if (!file || !Number.isSafeInteger(file.size) || file.size <= 0) return 'type';
     if (file.size > PACK_MAX_BYTES) return 'size';
@@ -9685,7 +9467,14 @@ async function importPackFile(packId, file) {
 
     let built;
     try {
-        built = await buildPackThumbnail(file, true);
+        let source = file;
+        if (crop) {
+            const cropped = await crop(file);
+            throwIfSignalAborted();
+            if (cropped === null) return 'cancelled';
+            source = base64ToImageBlob(`data:image/jpeg;base64,${cropped}`).blob;
+        }
+        built = await buildPackThumbnail(source, true);
     } catch (_) {
         throwIfSignalAborted();
         return 'decode';
@@ -9760,6 +9549,8 @@ async function openImagePacksPopup(onPick) {
     heading.tabIndex = -1;
     root.append(heading, packNode('p', 'iig-packs-intro', packT('intro')));
 
+    const controls = packNode('div', 'iig-packs-controls');
+    root.appendChild(controls);
     const toolbar = packNode('div', 'iig-packs-toolbar');
     const packSelect = packNode('select', 'text_pole iig-packs-select');
     packSelect.setAttribute('aria-label', packT('packs'));
@@ -9768,7 +9559,7 @@ async function openImagePacksPopup(onPick) {
     const addButton = packIconButton('iig-packs-add', 'fa-file-import', packT('addImages'), { labelHidden: true });
     const deleteButton = packIconButton('iig-packs-delete', 'fa-trash-can', packT('deletePack'), { labelHidden: true });
     toolbar.append(packSelect, newButton, renameButton, addButton, deleteButton);
-    root.appendChild(toolbar);
+    controls.appendChild(toolbar);
 
     const utilities = packNode('div', 'iig-packs-utilities');
     const sortSelect = packNode('select', 'text_pole iig-packs-sort');
@@ -9787,7 +9578,7 @@ async function openImagePacksPopup(onPick) {
     sortSelect.value = normalizePackSort(_packsSort);
     const storageButton = packIconButton('iig-packs-storage', 'fa-hard-drive', packT('checkStorage'));
     utilities.append(sortSelect, storageButton);
-    root.appendChild(utilities);
+    controls.appendChild(utilities);
 
     const fileInput = packNode('input', 'iig-hidden');
     fileInput.type = 'file';
@@ -10441,6 +10232,11 @@ async function openImagePacksPopup(onPick) {
         const files = [...(event.target.files || [])];
         event.target.value = '';
         if (busy || !files.length || !activePackId) return;
+        const packId = activePackId;
+        const crop = getSettings().cropOnUpload ? file => showNested(async () => {
+            const result = await cropRefUpload(file);
+            return disposed || activePackId !== packId ? null : result;
+        }) : null;
         setBusy(true);
         setStatus(packT('importing', { done: 0, total: files.length }));
         try {
@@ -10448,10 +10244,12 @@ async function openImagePacksPopup(onPick) {
             let done = 0;
             const reasons = new Set();
             for (const file of files) {
+                if (disposed || _iigDisposed || activePackId !== packId) return;
                 let reason;
                 try {
-                    reason = await importPackFile(activePackId, file);
+                    reason = await importPackFile(packId, file, crop);
                 } catch (error) {
+                    if (disposed || _iigDisposed) return;
                     iigLog('ERROR', 'Image Packs: import failed', error.message);
                     reason = error?.name === 'QuotaExceededError' ? 'quota' : 'store';
                 }
@@ -10467,13 +10265,13 @@ async function openImagePacksPopup(onPick) {
             else if (added === 0) setStatus(packT('importedNone', { skipped }));
             else setStatus(packT('importedSome', { count: added, skipped }));
             if (reasons.has('quota')) {
-                toastr.error(sanitizeForHtml(packT('quotaExceeded')), sanitizeForHtml(packT('title')));
+                toastr.error(sanitizeForHtml(packT('quotaExceeded')), sanitizeForHtml(packT('title')), { escapeHtml: false });
             } else if (reasons.has('store')) {
-                toastr.error(sanitizeForHtml(packT('storageFailed')), sanitizeForHtml(packT('title')));
+                toastr.error(sanitizeForHtml(packT('storageFailed')), sanitizeForHtml(packT('title')), { escapeHtml: false });
             } else if (reasons.has('size')) {
-                toastr.warning(sanitizeForHtml(packT('rejectedSize', { max: formatRefStorageSize(PACK_MAX_BYTES) })), sanitizeForHtml(packT('title')));
+                toastr.warning(sanitizeForHtml(packT('rejectedSize', { max: formatRefStorageSize(PACK_MAX_BYTES) })), sanitizeForHtml(packT('title')), { escapeHtml: false });
             } else if (reasons.has('type') || reasons.has('decode')) {
-                toastr.warning(sanitizeForHtml(packT('rejectedType')), sanitizeForHtml(packT('title')));
+                toastr.warning(sanitizeForHtml(packT('rejectedType')), sanitizeForHtml(packT('title')), { escapeHtml: false });
             }
             await renderPacks();
         } catch (error) {
@@ -10583,7 +10381,7 @@ async function cropRefUpload(file) {
             if (finished) return;
             finished = true;
             popup.okButton.setAttribute('aria-disabled', 'true');
-            resolve(iigError('Could not crop the reference image', 'iig_cropFailed'));
+            resolve(iigError('Could not crop the image', 'iig_cropFailed'));
         };
     });
     const show = popup.show;
@@ -10618,7 +10416,7 @@ async function cropRefUpload(file) {
         const result = await showIigPopup(popup);
         if (result == null || _iigDisposed) return null;
         const cropped = typeof result === 'string' && result.match(/^data:image\/jpeg;base64,(.+)$/);
-        if (!cropped) throw iigError('Could not crop the reference image', 'iig_cropFailed');
+        if (!cropped) throw iigError('Could not crop the image', 'iig_cropFailed');
         return cropped[1];
     } finally {
         finished = true;
@@ -10639,12 +10437,13 @@ async function uploadRefFileToSlot(slot, refType, npcIndex, file, { crop = false
 
     const scopeSettings = getSettings();
     const scopeContext = getContext();
-    const scopeHandle = getActiveRefScope({ forWrite: !crop });
+    const scopeHandle = getActiveRefScope();
+    const mutation = slot._iigRefMutation = Symbol();
     const originalRef = refType === 'npc' ? scopeHandle.container.npcReferences[npcIndex]
         : scopeHandle.container[`${refType}Ref`];
     const originalState = originalRef && [originalRef.name, originalRef.imagePath, originalRef.imageBase64, originalRef.imageData, originalRef.packAssetId];
     const isCurrent = () => {
-        if (_refFolderClearInProgress || slot.isConnected === false || !isRefScopeStateCurrent(scopeHandle)) return false;
+        if (_iigDisposed || slot._iigRefMutation !== mutation || _refFolderClearInProgress || slot.isConnected === false || !isRefScopeStateCurrent(scopeHandle)) return false;
         if (resolveRefScopeState(getSettings(), getContext()).container !== scopeHandle.container) return false;
         const ref = refType === 'npc' ? scopeHandle.container.npcReferences[npcIndex]
             : scopeHandle.container[`${refType}Ref`];
@@ -10652,20 +10451,19 @@ async function uploadRefFileToSlot(slot, refType, npcIndex, file, { crop = false
             .every((value, index) => value === originalState[index]));
     };
     const rawBase64 = crop ? await cropRefUpload(file) : await readIigBase64(file);
-    if (crop && (rawBase64 === null || !isCurrent())) return null;
+    if (rawBase64 === null || !isCurrent()) return null;
     const compressed = await compressBase64Image(rawBase64, 768, 0.8);
     const label = refType === 'npc' ? `npc${npcIndex}` : refType;
     const currentTypedName = slot.querySelector('.iig-ref-name')?.value?.trim() || '';
     const nameSlug = sanitizeRefNameForFilename(currentTypedName);
     const customFilename = nameSlug ? await pickUniqueRefFilename(refType, nameSlug) : null;
-    if (crop && !isCurrent()) return null;
-    // Promote only the still-current captured scope; cancellation must not create inherited buckets.
-    if (crop) Object.assign(scopeHandle, resolveRefScopeState(scopeSettings, scopeContext, { forWrite: true }));
+    if (!isCurrent()) return null;
     const savedPath = await saveRefImageToFile(compressed, label, customFilename);
-    if (!isRefScopeStateCurrent(scopeHandle)) {
-        await deleteRefFileOnServer(savedPath);
-        throw iigError('Reference scope changed before upload completed', 'iig_refScopeChanged');
+    if (!isCurrent()) {
+        if (!_iigDisposed) await deleteRefFileOnServer(savedPath);
+        return null;
     }
+    Object.assign(scopeHandle, resolveRefScopeState(scopeSettings, scopeContext, { forWrite: true }));
 
     const refs = scopeHandle.container;
     let prevPath = '';
@@ -10707,8 +10505,14 @@ function bindRefSlotEvents() {
         const npcIndex = parseInt(slot.dataset.npcIndex, 10);
 
         const nameInput = slot.querySelector('.iig-ref-name');
+        let nameEditScope = null;
         bindIig(nameInput, 'input', (e) => {
+            const current = getActiveRefScope().container;
+            const ref = refType === 'npc' ? current.npcReferences[npcIndex] : current[`${refType}Ref`];
+            if ((ref?.name || '') === e.target.value) return;
+            slot._iigRefMutation = Symbol();
             const scopeHandle = getActiveRefScope({ forWrite: true });
+            nameEditScope = scopeHandle;
             const s = scopeHandle.container;
             if (refType === 'char') {
                 s.charRef.name = e.target.value;
@@ -10727,7 +10531,9 @@ function bindRefSlotEvents() {
         let _renameInProgress = false;
         bindIig(nameInput, 'blur', async () => {
             if (_renameInProgress || _refFolderClearInProgress) return;
-            const scopeHandle = getActiveRefScope({ forWrite: true });
+            const scopeHandle = nameEditScope;
+            nameEditScope = null;
+            if (!scopeHandle || !isRefScopeStateCurrent(scopeHandle)) return;
             const s = scopeHandle.container;
             const currentName = (nameInput.value || '').trim();
             if (!currentName) return;
@@ -10744,20 +10550,23 @@ function bindRefSlotEvents() {
             const nameSlug = sanitizeRefNameForFilename(currentName);
             if (!nameSlug) return;
 
-            // Skip if filename is already the exact form or a numeric-collision
-            // variant (_2, _3, ...). A looser startsWith check would incorrectly
-            // match distinct names that happen to share a slug prefix.
+            // Recognize both older collision suffixes and unique upload names.
             const expectedPrefix = `iig_ref_${refType}_${nameSlug}`;
             if (currentFilename === `${expectedPrefix}.jpeg`) return;
             const escapedPrefix = expectedPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const collisionForm = new RegExp(`^${escapedPrefix}_\\d+\\.jpeg$`);
+            const collisionForm = new RegExp(`^${escapedPrefix}_(?:\\d+|u[0-9a-f]{32})\\.jpeg$`);
             if (collisionForm.test(currentFilename)) return;
 
             _renameInProgress = true;
-            iigLog('INFO', `Renaming ref file to match name "${currentName}": ${currentFilename} → iig_ref_${refType}_${nameSlug}.jpeg (or _N)`);
+            const mutation = slot._iigRefMutation = Symbol();
+            const isCurrent = () => !_iigDisposed && slot.isConnected !== false
+                && slot._iigRefMutation === mutation && isRefScopeStateCurrent(scopeHandle)
+                && (refType === 'npc' ? scopeHandle.container.npcReferences[npcIndex] : scopeHandle.container[`${refType}Ref`]) === slotRef
+                && slotRef.imagePath === currentPath && slotRef.name.trim() === currentName;
+            iigLog('INFO', `Renaming ref file to match name "${currentName}": ${currentFilename} → iig_ref_${refType}_${nameSlug}_u….jpeg`);
 
             try {
-                const newFilename = await pickUniqueRefFilename(refType, nameSlug, currentPath);
+                const newFilename = await pickUniqueRefFilename(refType, nameSlug);
 
                 const currentB64 = await loadRefImageAsBase64(currentPath);
                 if (!currentB64) {
@@ -10766,10 +10575,11 @@ function bindRefSlotEvents() {
                 }
 
                 const label = refType === 'npc' ? `npc${npcIndex}` : refType;
+                if (!isCurrent()) return;
                 const newPath = await saveRefImageToFile(currentB64, label, newFilename);
 
-                if (!isRefScopeStateCurrent(scopeHandle) || slotRef.imagePath !== currentPath) {
-                    await deleteRefFileOnServer(newPath);
+                if (!isCurrent()) {
+                    if (!_iigDisposed) await deleteRefFileOnServer(newPath);
                     return;
                 }
 
@@ -10800,11 +10610,11 @@ function bindRefSlotEvents() {
                 if (savedPath === null || _iigDisposed) return;
                 clearPackedRefSlotAppearance(slot);
                 iigLog('INFO', `Ref slot ${label}: saved to ${savedPath}`);
-                toastr.success(sanitizeForHtml(iigT('iig_photoSaved')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
+                toastr.success(sanitizeForHtml(iigT('iig_photoSaved')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
             } catch (err) {
                 if (_iigDisposed || err?.name === 'AbortError') return;
                 iigLog('ERROR', `Ref slot ${label}: upload failed`, err.message);
-                toastr.error(sanitizeForHtml(iigT('iig_photoUploadFailed', { error: iigErrorText(err) })), sanitizeForHtml(iigT('iig_title')));
+                toastr.error(sanitizeForHtml(iigT('iig_photoUploadFailed', { error: iigErrorText(err) })), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
             } finally {
                 e.target.value = '';
             }
@@ -10820,7 +10630,7 @@ function bindRefSlotEvents() {
                     const savedPath = await uploadRefFileToSlot(slot, refType, npcIndex, file, { packAssetId: item.id });
                     if (!savedPath || _iigDisposed) return false;
                     setPackedRefSlotAppearance(slot, item);
-                    toastr.success(sanitizeForHtml(iigT('iig_photoSaved')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
+                    toastr.success(sanitizeForHtml(iigT('iig_photoSaved')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
                     return true;
                 } catch (err) {
                     iigLog('ERROR', `Ref slot ${label}: pack upload failed`, err.message);
@@ -10828,13 +10638,15 @@ function bindRefSlotEvents() {
                 }
             }).catch(error => {
                 iigLog('ERROR', 'Image Packs: popup failed', error);
-                toastr.error(sanitizeForHtml(packT('storageFailed')), sanitizeForHtml(packT('title')));
+                toastr.error(sanitizeForHtml(packT('storageFailed')), sanitizeForHtml(packT('title')), { escapeHtml: false });
             });
         });
 
         const deleteBtn = slot.querySelector('.iig-ref-delete-btn');
         bindIig(deleteBtn, 'click', () => {
             if (_refFolderClearInProgress) return;
+            slot._iigRefMutation = Symbol();
+            nameEditScope = null;
             const scopeHandle = getActiveRefScope({ forWrite: true });
             const s = scopeHandle.container;
             let prevPath = '';
@@ -10861,7 +10673,7 @@ function bindRefSlotEvents() {
 
             const label = refType === 'npc' ? `NPC ${npcIndex + 1}` : refType;
             iigLog('INFO', `Ref slot ${label}: cleared`);
-            toastr.info(sanitizeForHtml(iigT('iig_slotCleared')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000 });
+            toastr.info(sanitizeForHtml(iigT('iig_slotCleared')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
 
         });
     }
@@ -10976,7 +10788,7 @@ function bindSettingsEvents() {
             if (config.activePresetName) {
                 config.activePresetName = '';
                 refreshPromptModelGeminiPresetSelect();
-                toastr.info(sanitizeForHtml(iigT('iig_ui_geminiPresetDetached')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+                toastr.info(sanitizeForHtml(iigT('iig_ui_geminiPresetDetached')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
             }
             saveSettings();
             if (field === 'model') refreshPromptModelStatus();
@@ -11003,9 +10815,9 @@ function bindSettingsEvents() {
         button.classList.add('loading');
         try {
             const models = await refreshPromptModelGeminiCatalog();
-            if (!models.length) toastr.warning(sanitizeForHtml(iigT('iig_ui_modelCatalogEmpty')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+            if (!models.length) toastr.warning(sanitizeForHtml(iigT('iig_ui_modelCatalogEmpty')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
         } catch (error) {
-            toastr.warning(sanitizeForHtml(iigT('iig_ui_modelsLoadFailed', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+            toastr.warning(sanitizeForHtml(iigT('iig_ui_modelsLoadFailed', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
         } finally {
             button.disabled = false;
             button.classList.remove('loading');
@@ -11022,11 +10834,11 @@ function bindSettingsEvents() {
         icon.className = 'fa-solid fa-spinner';
         try {
             const result = await testPromptModelGeminiConnection();
-            toastr.success(sanitizeForHtml(pmT(result?.caveat || 'connectionOk')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+            toastr.success(sanitizeForHtml(pmT(result?.caveat || 'connectionOk')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
             button.classList.add('test-success');
             setIigTimeout(() => button.classList.remove('test-success'), 700);
         } catch (error) {
-            toastr.error(sanitizeForHtml(iigT('iig_ui_connectionFailed', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+            toastr.error(sanitizeForHtml(iigT('iig_ui_connectionFailed', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
             button.classList.add('test-fail');
             setIigTimeout(() => button.classList.remove('test-fail'), 700);
         } finally {
@@ -11046,7 +10858,7 @@ function bindSettingsEvents() {
         }
         const preset = findPromptModelGeminiPreset(config, name);
         if (!preset) {
-            toastr.error(sanitizeForHtml(iigT('iig_ui_geminiPresetMissing')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+            toastr.error(sanitizeForHtml(iigT('iig_ui_geminiPresetMissing')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
             refreshPromptModelGeminiPresetSelect();
             return;
         }
@@ -11065,7 +10877,7 @@ function bindSettingsEvents() {
         try {
             resolvePromptModelGeminiConfig();
         } catch (error) {
-            toastr.warning(sanitizeForHtml(iigT('iig_ui_geminiPresetInvalid', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+            toastr.warning(sanitizeForHtml(iigT('iig_ui_geminiPresetInvalid', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
             return;
         }
         let name = (window.prompt(iigT('iig_ui_presetNamePrompt'), config.activePresetName || '') || '').trim();
@@ -11079,7 +10891,7 @@ function bindSettingsEvents() {
             config.presets[config.presets.indexOf(existing)] = snapshot;
         } else {
             if (config.presets.length >= 20) {
-                toastr.warning(sanitizeForHtml(pmT('presetLimit')), sanitizeForHtml(pmT('title')));
+                toastr.warning(sanitizeForHtml(pmT('presetLimit')), sanitizeForHtml(pmT('title')), { escapeHtml: false });
                 return;
             }
             config.presets.push(snapshot);
@@ -11087,14 +10899,14 @@ function bindSettingsEvents() {
         config.activePresetName = name;
         saveSettings({ sync: true });
         refreshPromptModelGeminiPresetSelect();
-        toastr.success(sanitizeForHtml(iigT('iig_ui_geminiPresetSaved', { name })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+        toastr.success(sanitizeForHtml(iigT('iig_ui_geminiPresetSaved', { name })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
     });
 
     bindIig(document.getElementById('iig_pm_gemini_delete'), 'click', () => {
         const config = promptModelGeminiSettings();
         const preset = findPromptModelGeminiPreset(config, document.getElementById('iig_pm_gemini_preset')?.value);
         if (!preset) {
-            toastr.info(sanitizeForHtml(iigT('iig_ui_selectGeminiPresetToDelete')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+            toastr.info(sanitizeForHtml(iigT('iig_ui_selectGeminiPresetToDelete')), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
             return;
         }
         const name = preset.name;
@@ -11103,7 +10915,7 @@ function bindSettingsEvents() {
         config.presets.splice(config.presets.indexOf(preset), 1);
         saveSettings({ sync: true });
         refreshPromptModelGeminiPresetSelect();
-        toastr.info(sanitizeForHtml(iigT('iig_ui_geminiPresetDeleted', { name })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')));
+        toastr.info(sanitizeForHtml(iigT('iig_ui_geminiPresetDeleted', { name })), sanitizeForHtml(iigT('iig_ui_promptModelTitle')), { escapeHtml: false });
     });
 
     bindIig(document.getElementById('iig_pm_enabled'), 'change', async (event) => {
@@ -11203,6 +11015,7 @@ function bindSettingsEvents() {
         }
 
         settings.apiType = nextApiType;
+        invalidateImageModelCatalog();
         clearProviderQuirks('apiType changed');
         saveSettings();
         updateVisibility();
@@ -11210,6 +11023,7 @@ function bindSettingsEvents() {
     
     bindIig(document.getElementById('iig_endpoint'), 'input', (e) => {
         settings.endpoint = normalizeConfiguredEndpoint(settings.apiType, e.target.value);
+        invalidateImageModelCatalog();
         // Fires per keystroke; Map.clear() on an empty map is a no-op and
         // clearProviderQuirks returns early, so this is free while typing.
         clearProviderQuirks('endpoint changed');
@@ -11225,6 +11039,7 @@ function bindSettingsEvents() {
     
     bindIig(document.getElementById('iig_api_key'), 'input', (e) => {
         settings.apiKey = e.target.value;
+        invalidateImageModelCatalog();
         saveSettings();
     });
     
@@ -11252,18 +11067,24 @@ function bindSettingsEvents() {
     
     bindIig(document.getElementById('iig_refresh_models'), 'click', async (e) => {
         const btn = e.currentTarget;
+        const request = btn._iigCatalogRequest = Symbol();
+        const captured = { ...getSettings() };
+        const isCurrent = () => !_iigDisposed && btn.isConnected && btn._iigCatalogRequest === request
+            && ['apiType', 'endpoint', 'apiKey', 'showAllModels'].every(key => getSettings()[key] === captured[key]);
         btn.classList.add('loading');
         
         try {
-            const models = await fetchModels();
+            const models = await fetchModels(captured);
+            if (!isCurrent()) return;
             updateModelCatalog('iig_model', models, models.length > 0);
             
-            if (models.length > 0) toastr.success(sanitizeForHtml(iigT('iig_ui_modelsFound', { count: models.length })), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
-            else toastr.warning(sanitizeForHtml(iigT('iig_ui_modelCatalogEmpty')), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+            if (models.length > 0) toastr.success(sanitizeForHtml(iigT('iig_ui_modelsFound', { count: models.length })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
+            else toastr.warning(sanitizeForHtml(iigT('iig_ui_modelCatalogEmpty')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
         } catch (error) {
-            toastr.error(sanitizeForHtml(iigT('iig_ui_modelsLoadFailed', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+            if (!isCurrent()) return;
+            toastr.error(sanitizeForHtml(iigT('iig_ui_modelsLoadFailed', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
         } finally {
-            btn.classList.remove('loading');
+            if (!_iigDisposed && btn._iigCatalogRequest === request) btn.classList.remove('loading');
         }
     });
     
@@ -11343,7 +11164,7 @@ function bindSettingsEvents() {
         renderRefSlots();
         toastr.info(sanitizeForHtml(iigT(scope === 'per-chat'
             ? 'iig_ui_chatRefsReset'
-            : 'iig_ui_characterRefsReset')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500 });
+            : 'iig_ui_characterRefsReset')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
     });
 
     // Advanced handlers
@@ -11353,6 +11174,7 @@ function bindSettingsEvents() {
     });
     bindIig(document.getElementById('iig_show_all_models'), 'change', (e) => {
         settings.showAllModels = e.target.checked;
+        invalidateImageModelCatalog();
         saveSettings();
     });
 
@@ -11378,11 +11200,12 @@ function bindSettingsEvents() {
         }
         const preset = findPreset(settings, name);
         if (!preset) {
-            toastr.error(sanitizeForHtml(iigT('iig_ui_presetNotFound', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+            toastr.error(sanitizeForHtml(iigT('iig_ui_presetNotFound', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
             refreshPresetDropdown();
             return;
         }
         applyPresetToSettings(settings, preset);
+        invalidateImageModelCatalog();
         settings.activePresetName = preset.name;
         saveSettings();
 
@@ -11401,7 +11224,7 @@ function bindSettingsEvents() {
         const gSendRefs = document.getElementById('iig_gemini_send_refs');
         if (gSendRefs) gSendRefs.checked = settings.geminiSendRefs !== false;
         updateVisibility();
-        toastr.success(sanitizeForHtml(iigT('iig_ui_presetLoaded', { name: preset.name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500 });
+        toastr.success(sanitizeForHtml(iigT('iig_ui_presetLoaded', { name: preset.name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
     });
 
     bindIig(document.getElementById('iig_preset_save'), 'click', () => {
@@ -11418,10 +11241,10 @@ function bindSettingsEvents() {
         if (idx >= 0) {
             if (!window.confirm(iigT('iig_ui_presetOverwriteConfirm', { name }))) return;
             settings.presets[idx] = snap;
-            toastr.success(sanitizeForHtml(iigT('iig_ui_presetOverwritten', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500 });
+            toastr.success(sanitizeForHtml(iigT('iig_ui_presetOverwritten', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
         } else {
             settings.presets.push(snap);
-            toastr.success(sanitizeForHtml(iigT('iig_ui_presetSaved', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500 });
+            toastr.success(sanitizeForHtml(iigT('iig_ui_presetSaved', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
         }
         settings.activePresetName = name;
         saveSettings({ sync: true });
@@ -11432,7 +11255,7 @@ function bindSettingsEvents() {
         const sel = document.getElementById('iig_preset_select');
         const name = sel?.value;
         if (!name) {
-            toastr.info(sanitizeForHtml(iigT('iig_ui_selectPresetToDelete')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500 });
+            toastr.info(sanitizeForHtml(iigT('iig_ui_selectPresetToDelete')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
             return;
         }
         if (!window.confirm(iigT('iig_ui_deletePresetConfirm', { name }))) return;
@@ -11440,7 +11263,7 @@ function bindSettingsEvents() {
         if (settings.activePresetName === name) settings.activePresetName = '';
         saveSettings({ sync: true });
         refreshPresetDropdown();
-        toastr.info(sanitizeForHtml(iigT('iig_ui_presetDeleted', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500 });
+        toastr.info(sanitizeForHtml(iigT('iig_ui_presetDeleted', { name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
     });
     
     bindIig(document.getElementById('iig_max_retries'), 'input', (e) => {
@@ -11471,68 +11294,10 @@ function bindSettingsEvents() {
         openImBtn.classList.remove('iig-hidden');
         bindIig(openImBtn, 'click', () => {
             if (!runSlashCommand('/image-manager')) {
-                toastr.warning(sanitizeForHtml(iigT('iig_ui_imageManagerUnavailable')), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+                toastr.warning(sanitizeForHtml(iigT('iig_ui_imageManagerUnavailable')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
             }
         });
     }
-
-    // Try direct and debounced saves, preserve the local backup, then fall back to POST.
-    bindIig(document.getElementById('iig_manual_save'), 'click', async () => {
-        const btn = document.getElementById('iig_manual_save');
-        const status = document.getElementById('iig_save_status');
-        btn.style.opacity = '0.6';
-        status.style.color = '';
-        status.textContent = iigT('iig_ui_saving');
-
-        let ok = false;
-        const errors = [];
-
-        if (typeof window.saveSettings === 'function') {
-            try {
-                await window.saveSettings();
-                ok = true;
-                iigLog('INFO', 'Manual save: window.saveSettings OK');
-            } catch(e) {
-                errors.push('window.saveSettings: ' + e.message);
-            }
-        }
-
-        try {
-            SillyTavern.getContext().saveSettingsDebounced();
-        } catch(e) { errors.push('debounced: ' + e.message); }
-
-        persistRefsToLocalStorage();
-
-        if (!ok) {
-            try {
-                const ctx = SillyTavern.getContext();
-                const payload = {};
-                for (const k of ['power_user','oai_settings','extension_settings']) {
-                    if (window[k] !== undefined) payload[k] = window[k];
-                }
-                payload['extension_settings'] = ctx.extensionSettings;
-                const resp = await fetchWithTimeout('/api/settings/save', {
-                    method: 'POST',
-                    headers: ctx.getRequestHeaders(),
-                    body: JSON.stringify(payload)
-                }, 30000);
-                resp.iigDiscard?.();
-                if (resp.ok) { ok = true; iigLog('INFO', 'Manual save: API OK'); }
-                else { errors.push('API: HTTP ' + resp.status); }
-            } catch(e) { errors.push('API: ' + e.message); }
-        }
-
-        btn.style.opacity = '1';
-        if (ok) {
-            status.style.color = '#4caf50';
-            status.textContent = iigT('iig_ui_saved');
-            setIigTimeout(() => { status.textContent = ''; }, 3000);
-        } else {
-            status.style.color = '#f44336';
-            status.textContent = iigT('iig_ui_saveFailed', { detail: iigErrorText(new Error(errors.join('; '))) });
-            iigLog('ERROR', 'Manual save failed:', errors.join('; '));
-        }
-    });
 
     bindIig(document.getElementById('iig_check_ref_storage'), 'click', async (e) => {
         const btn = e.currentTarget;
@@ -11554,7 +11319,7 @@ function bindSettingsEvents() {
             if (status) {
                 status.textContent = iigT('iig_ui_storageMeasureFailed');
             }
-            toastr.error(sanitizeForHtml(iigT('iig_ui_storageMeasureError', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+            toastr.error(sanitizeForHtml(iigT('iig_ui_storageMeasureError', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
         } finally {
             btn.disabled = false;
         }
@@ -11584,7 +11349,7 @@ function bindSettingsEvents() {
                     status.textContent = iigT('iig_ui_storageEmpty');
                     status.dataset.measured = '1';
                 }
-                toastr.info(sanitizeForHtml(iigT('iig_ui_storageAlreadyEmpty')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500 });
+                toastr.info(sanitizeForHtml(iigT('iig_ui_storageAlreadyEmpty')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
                 return;
             }
 
@@ -11606,11 +11371,11 @@ function bindSettingsEvents() {
                 if (failed === 0) status.dataset.measured = '1';
                 else delete status.dataset.measured;
             }
-            toastr.success(sanitizeForHtml(iigT(failed ? 'iig_ui_storageClearedPartial' : 'iig_ui_storageCleared', { deleted, failed })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 3500 });
+            toastr.success(sanitizeForHtml(iigT(failed ? 'iig_ui_storageClearedPartial' : 'iig_ui_storageCleared', { deleted, failed })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 3500, escapeHtml: false });
             iigLog('INFO', `Clear refs folder: deleted=${deleted}, failed=${failed}, prefix=${folderPrefix}`);
         } catch (err) {
             iigLog('ERROR', 'Clear refs folder failed:', err.message);
-            toastr.error(sanitizeForHtml(iigT('iig_ui_storageClearFailed', { detail: iigErrorText(err) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+            toastr.error(sanitizeForHtml(iigT('iig_ui_storageClearFailed', { detail: iigErrorText(err) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
         } finally {
             _refFolderClearInProgress = false;
             setRefMutationControlsDisabled(false);
@@ -11647,10 +11412,10 @@ function bindSettingsEvents() {
                     if (resp.status === 404) throw iigError('Generation endpoint not found (HTTP 404)', 'iig_ui_generationEndpointMissing');
                     if (resp.status >= 500) throw iigError(`Endpoint unavailable (HTTP ${resp.status})`, 'iig_ui_endpointUnavailable', { status: resp.status });
                     if (resp.ok) {
-                        toastr.success(sanitizeForHtml(iigT('iig_ui_generationEndpointReached')), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+                        toastr.success(sanitizeForHtml(iigT('iig_ui_generationEndpointReached')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
                     } else {
                         flashSuccess = false;
-                        toastr.warning(sanitizeForHtml(iigT('iig_ui_probeReturnedStatus', { status: resp.status })), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+                        toastr.warning(sanitizeForHtml(iigT('iig_ui_probeReturnedStatus', { status: resp.status })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
                     }
                     break;
                 }
@@ -11661,9 +11426,9 @@ function bindSettingsEvents() {
                     const models = await fetchModels();
                     updateModelCatalog('iig_model', models);
                     if (models.length > 0) {
-                        toastr.success(sanitizeForHtml(iigT('iig_ui_connectionModelsFound', { count: models.length })), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+                        toastr.success(sanitizeForHtml(iigT('iig_ui_connectionModelsFound', { count: models.length })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
                     } else {
-                        toastr.warning(sanitizeForHtml(iigT('iig_ui_connectionNoModels')), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+                        toastr.warning(sanitizeForHtml(iigT('iig_ui_connectionNoModels')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
                     }
                     break;
                 }
@@ -11676,7 +11441,7 @@ function bindSettingsEvents() {
                 setIigTimeout(() => btn.classList.remove('test-success'), 700);
             }
         } catch (error) {
-            toastr.error(sanitizeForHtml(iigT('iig_ui_connectionFailed', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')));
+            toastr.error(sanitizeForHtml(iigT('iig_ui_connectionFailed', { detail: iigErrorText(error) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
             btn.classList.add('test-fail');
             setIigTimeout(() => btn.classList.remove('test-fail'), 700);
         } finally {
@@ -11804,7 +11569,7 @@ function cleanupIig() {
             const id = Number.parseInt(editor.closest('.mes[mesid]')?.getAttribute('mesid') || '', 10);
             if (!_promptModelEditSessions.has(getContext()?.chat?.[id])) continue;
             const error = iigError(iigT('iig_cleanupEditActive'), 'iig_cleanupEditActive');
-            toastr.warning(sanitizeForHtml(iigT('iig_cleanupEditActive')), sanitizeForHtml(iigT('iig_title')));
+            toastr.warning(sanitizeForHtml(iigT('iig_cleanupEditActive')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
             return Promise.reject(error);
         }
     }
@@ -11890,7 +11655,7 @@ function cleanupIig() {
         timer = setTimeout(() => {
             const error = iigError(iigT('iig_cleanupTimedOut'), 'iig_cleanupTimedOut');
             reject(error);
-            toastr.error(sanitizeForHtml(iigT('iig_cleanupTimedOut')), sanitizeForHtml(iigT('iig_title')));
+            toastr.error(sanitizeForHtml(iigT('iig_cleanupTimedOut')), sanitizeForHtml(iigT('iig_title')), { escapeHtml: false });
         }, IIG_CLEANUP_TIMEOUT_MS);
     });
     _iigCleanupPromise = Promise.race([_iigCleanupWork, deadline]).then(value => {
@@ -11929,8 +11694,7 @@ function cleanupIig() {
     // Primer: populate context cache for the rest of the module.
     const context = getContext();
 
-    // Capture ST's window.saveSettings before our declaration shadows it
-    // (the non-debounced path matters for durable mobile writes).
+    // Some hosts expose an optional immediate settings-save hook.
     if (!_stSaveSettingsCaptured) {
         const candidate = window.saveSettings;
         if (typeof candidate === 'function' && candidate !== saveSettings) {
@@ -11966,6 +11730,7 @@ function cleanupIig() {
             if (reroll) {
                 event.preventDefault();
                 event.stopPropagation();
+                if (reroll.disabled) return;
                 const messageElement = reroll.closest('.mes[mesid]');
                 const messageId = Number.parseInt(messageElement?.getAttribute('mesid') || '', 10);
                 if (!Number.isInteger(messageId)) return;
@@ -11975,11 +11740,12 @@ function cleanupIig() {
                     const resolved = await resolveRenderedImageSource(img);
                     if (_iigDisposed) return;
                     if (!resolved) throw iigError('Could not identify the selected image source', 'iig_imageSourceMissing');
-                    return rerollNormalMessageImage(img, resolved);
-                })().catch(error => {
-                    iigLog('ERROR', 'Prompt reroll selection failed:', error.message);
-                    toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')));
-                }).finally(() => { if (reroll.isConnected) reroll.disabled = false; });
+                    return rerollSelectedMessageImage(img, resolved);
+                })().catch(() => {
+                    if (_iigDisposed) return;
+                    iigLog('ERROR', 'Prompt reroll selection failed');
+                    toastr.error(sanitizeForHtml(iigT('iig_imageSourceMissing')), sanitizeForHtml(pmT('title')), { escapeHtml: false });
+                }).finally(() => { if (!_iigDisposed && reroll.isConnected) reroll.disabled = false; });
             }
             const retry = event.target.closest('[data-iig-pm-retry="1"]');
             if (!retry) return;

@@ -278,10 +278,12 @@ are compressed to 768px max and stored as real files on the ST server (not in
 
 ### Cropping uploads
 
-**Crop uploaded references** is on by default in Character References. Choose
-a photo, adjust the crop, then confirm. Cancel leaves the previous photo alone.
-Turn the option off to upload without the extra step; choosing an image from
-Packs never opens the crop dialog.
+**Crop uploads (references and packs)** is on by default in Character References.
+It controls both slot uploads and new photos added to Image Packs. Choose a photo,
+adjust the crop, then confirm. Cancel keeps the previous reference, or skips that
+photo in a pack import; multi-photo imports continue with the next photo.
+Turn the option off to upload without cropping. Choosing an existing image from
+Packs does not crop it again.
 
 Cropping uses a preview up to 768px, so very tight crops can lose detail.
 References are saved as JPEG; transparency is not preserved.
@@ -417,10 +419,22 @@ for non-standard providers:
 | Action | Scope |
 |---|---|
 | **Regenerate** | Regenerates only that image from its existing instruction. |
-| **Rewrite prompt + regenerate** | Rewrites and regenerates the selected narrative image when its exact recent Chat Completion context is available; otherwise it explains that the context expired. |
+| **Rewrite prompt + regenerate** | The sparkle rewrites the selected image's prompt, then regenerates only that image, including images made by Prompt Model. |
 | **Download / Open image to save** | Downloads on desktop; opens the image for saving on mobile. |
 
-**On error images** — a retry button regenerates only that image.
+Sparkle uses the main Chat Completion model for narrative images and the configured
+separate Prompt Model connection for Prompt Model images, including Gemini-compatible.
+It leaves the narrative and other images alone. A compact composing bar appears
+while the prompt is rewritten, followed by the normal image-generation loader.
+The old image is temporarily hidden, not discarded; cancellation or a failed
+rewrite or image generation brings it back.
+
+Rewriting needs the exact recent generation context. If it has expired, the button
+explains this instead of guessing; ordinary **Regenerate** still uses the existing
+instruction. **Stop** is available until the replacement starts saving to the chat.
+
+**On error images** — retry uses the existing instruction; sparkle rewrites it and
+regenerates only that image. The same recent-context requirement applies.
 
 **In the message menu** — a stacked-images icon regenerates **all** images at once.
 
@@ -480,9 +494,9 @@ iOS uses XMLHttpRequest for long-running image requests.
 | Transport | `fetch` + `AbortController` | `XMLHttpRequest` |
 | Image timeout | 5 min | 3 min |
 
-The extension attempts to save pending reference changes when you leave or
-background the page. Use **Save settings** and wait for confirmation before
-closing it; a browser force-close can still interrupt saving.
+Settings save automatically. The extension also attempts to save pending
+reference changes when you leave or background the page; a browser force-close
+can still interrupt saving.
 
 Wrapping work is batched, reference images are cached, and idle polling is
 avoided. Large uploads and multiple simultaneous generations can still use
