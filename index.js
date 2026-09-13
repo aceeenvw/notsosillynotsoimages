@@ -8281,7 +8281,7 @@ const IIG_UI_I18N = {
         probeReturnedStatus: 'Endpoint reached, but the non-generation probe returned HTTP {status}.',
     },
     ru: {
-        title: '⊹ ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЙ В ЧАТЕ ⊹',
+        title: '⊹ INLINE IMAGE GENERATION ⊹',
         intro: 'Настройте провайдера, параметры генерации по умолчанию и референсы персонажей.',
         enabled: 'Включить генерацию изображений',
         promptDriven: 'Использовать параметры генерации из тегов',
@@ -8495,7 +8495,7 @@ function createSettingsUI() {
     const html = `
         <div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b><i class="fa-solid fa-leaf"></i> <span data-i18n="iig_ui_title">⊹ INLINE IMAGE GENERATION ⊹</span></b>
+                <b><span data-i18n="iig_ui_title">⊹ INLINE IMAGE GENERATION ⊹</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
