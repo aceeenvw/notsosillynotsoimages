@@ -457,6 +457,10 @@ function getCurrentSwipeId(messageId) {
     }
 }
 
+function getCurrentMessageText(message) {
+    return String(message?.mes ?? '');
+}
+
 function buildProcessingKey(messageId) {
     try {
         const ctx = getContext();
@@ -1038,7 +1042,7 @@ function isLoopbackHostname(hostname) {
  * Validate the destination before attaching credentials; return an error or null.
  * Remote HTTP warns but remains allowed for local proxy setups.
  */
-function validateEndpointShape(endpoint) {
+function validateEndpointShape(endpoint, warnPlaintext = true) {
     const raw = String(endpoint || '').trim();
     if (!raw) return 'Endpoint URL not configured';
 
@@ -1057,7 +1061,7 @@ function validateEndpointShape(endpoint) {
         return 'Use a base endpoint without credentials, query parameters or fragments';
     }
 
-    if (parsed.protocol === 'http:' && !isLoopbackHostname(parsed.hostname) && !_warnedPlaintextEndpoint) {
+    if (warnPlaintext && parsed.protocol === 'http:' && !isLoopbackHostname(parsed.hostname) && !_warnedPlaintextEndpoint) {
         _warnedPlaintextEndpoint = true;
         iigLog('WARN', `Endpoint uses plaintext http:// to a remote host (${parsed.hostname}); your API key is sent unencrypted. Use https:// unless this is a local proxy.`);
     }
@@ -1410,14 +1414,33 @@ const IIG_MESSAGES_I18N = {
         noTags: 'No tags to regenerate',
         regeneratingImages: 'Regenerating {count} image(s)...',
         photoSaved: 'Photo saved to server',
-        cropTitle: 'Crop image',
+        cropTitle: 'Image editor',
         cropFailed: 'Could not crop the image',
+        cropApply: 'Apply',
+        cropMode: 'Crop',
+        captionAdd: 'Add Text',
+        captionEdit: 'Text',
+        captionRemove: 'Remove Text',
+        captionSelect: 'Selected text',
+        captionBlock: 'Text {number}',
+        captionLimit: 'Up to 8 text blocks per image.',
+        captionTools: 'Editing tools',
+        captionCropHint: 'Drag the crop edges to frame your image. Use Add Text to label the people in your reference.',
+        captionLabel: 'Caption',
+        captionSize: 'Font size (px)',
+        captionColor: 'Text color',
+        captionStroke: 'Stroke width (px)',
+        captionStrokeColor: 'Stroke color',
+        captionX: 'Horizontal position (%)',
+        captionY: 'Vertical position (%)',
+        captionHint: 'Tap a text block to select it, then drag or use the position controls. Long text shrinks to fit.',
+        captionPreview: 'Text preview. Select and drag a text block, or use the selection and position controls below.',
         photoUploadFailed: 'Photo upload failed: {error}',
         slotCleared: 'Slot cleared',
         session: 'Session: {counts}',
         generatedCount: '{count} generated',
         failedCount: '{count} failed',
-        noMatchingModels: 'No matching models',
+        noMatchingModels: 'No matches. You can still enter a model ID manually.',
         loadModels: 'Load models to show suggestions',
         modelsShowing: 'Showing {limit} of {count}; type to narrow the list',
         bytes: 'B',
@@ -1517,14 +1540,33 @@ const IIG_MESSAGES_I18N = {
         noTags: 'Нет тегов для повторной генерации',
         regeneratingImages: 'Повторная генерация изображений: {count}...',
         photoSaved: 'Фото сохранено на сервере',
-        cropTitle: 'Обрезать изображение',
+        cropTitle: 'Редактор изображения',
         cropFailed: 'Не удалось обрезать изображение',
+        cropApply: 'Применить',
+        cropMode: 'Обрезка',
+        captionAdd: 'Добавить текст',
+        captionEdit: 'Текст',
+        captionRemove: 'Удалить текст',
+        captionSelect: 'Выбранный текст',
+        captionBlock: 'Текст {number}',
+        captionLimit: 'До 8 текстовых блоков на изображении.',
+        captionTools: 'Инструменты редактирования',
+        captionCropHint: 'Перетаскивайте края рамки, чтобы обрезать изображение. Нажмите «Добавить текст», чтобы подписать людей на референсе.',
+        captionLabel: 'Подпись',
+        captionSize: 'Размер шрифта (px)',
+        captionColor: 'Цвет текста',
+        captionStroke: 'Толщина обводки (px)',
+        captionStrokeColor: 'Цвет обводки',
+        captionX: 'Положение по горизонтали (%)',
+        captionY: 'Положение по вертикали (%)',
+        captionHint: 'Нажмите на текстовый блок, затем перетащите его или используйте настройки положения. Длинный текст уменьшается, чтобы поместиться.',
+        captionPreview: 'Предпросмотр текста. Выберите и перетащите текстовый блок или используйте настройки выбора и положения ниже.',
         photoUploadFailed: 'Не удалось загрузить фото: {error}',
         slotCleared: 'Слот очищен',
         session: 'За сеанс: {counts}',
         generatedCount: 'создано: {count}',
         failedCount: 'ошибок: {count}',
-        noMatchingModels: 'Подходящие модели не найдены',
+        noMatchingModels: 'Совпадений нет. ID модели можно ввести вручную.',
         loadModels: 'Загрузите модели для показа подсказок',
         modelsShowing: 'Показано {limit} из {count}; введите текст для уточнения списка',
         bytes: 'Б',
@@ -1852,6 +1894,9 @@ const IMAGE_PACKS_I18N = {
         packs: 'Packs',
         newPack: 'New pack',
         newPackPrompt: 'Pack name',
+        saveRefs: 'Save as Pack',
+        refsSaved: 'Saved {count} reference image(s) to "{name}".',
+        saveRefsFailed: 'Could not save references as a pack.',
         renamePack: 'Rename pack',
         renamePackPrompt: 'New pack name',
         packRenamed: 'Pack renamed.',
@@ -1913,6 +1958,9 @@ const IMAGE_PACKS_I18N = {
         packs: 'Наборы',
         newPack: 'Новый набор',
         newPackPrompt: 'Название набора',
+        saveRefs: 'Сохранить как набор',
+        refsSaved: 'Сохранено изображений в набор «{name}»: {count}.',
+        saveRefsFailed: 'Не удалось сохранить референсы как набор.',
         renamePack: 'Переименовать набор',
         renamePackPrompt: 'Новое название набора',
         packRenamed: 'Набор переименован.',
@@ -2053,9 +2101,9 @@ function normalizePromptModelGeminiEndpoint(endpoint, stripVersion = true) {
     return stripVersion ? base.replace(/\/v1beta$/i, '') : base;
 }
 
-function validatePromptModelGeminiEndpoint(endpoint) {
+function validatePromptModelGeminiEndpoint(endpoint, warnPlaintext = true) {
     const base = normalizePromptModelGeminiEndpoint(endpoint);
-    const shapeError = validateEndpointShape(base);
+    const shapeError = validateEndpointShape(base, warnPlaintext);
     if (shapeError) return iigError(shapeError, 'iig_pm_endpointInvalid');
     const parsed = new URL(base, window.location.href);
     return parsed.search || parsed.hash
@@ -2103,6 +2151,42 @@ async function setPromptModelGuidance(value) {
 
 function isPromptModelAvailable() {
     return globalThis.SillyTavern?.getContext?.()?.mainApi === 'openai' && !!promptManager;
+}
+
+let _promptModelMacroScope = null;
+
+function getPromptModelRouting() {
+    let active = false;
+    const settings = !_iigDisposed && getContext()?.extensionSettings?.[MODULE_NAME];
+    if (settings?.enabled && isPromptModelAvailable()) {
+        const pm = settings.promptModel;
+        if (pm?.enabled && pm.snapshot?.content) {
+            if (pm.connection === 'gemini') {
+                const config = snapshotPromptModelGeminiConfig(pm.gemini);
+                active = !!(config.endpoint && config.apiKey && config.model
+                    && !validatePromptModelGeminiEndpoint(config.endpoint, false));
+            } else {
+                active = !!pm.model;
+            }
+        }
+    }
+    return active && _promptModelMacroScope
+        ? _promptModelMacroScope
+        : Object.freeze({ active, target: 'main', messageId: null });
+}
+
+function withPromptModelMacroScope(messageId, build) {
+    const previous = _promptModelMacroScope;
+    _promptModelMacroScope = Object.freeze({
+        active: true,
+        target: 'image',
+        messageId: Number.isInteger(Number(messageId)) && Number(messageId) >= 0 ? Number(messageId) : null,
+    });
+    try {
+        return build();
+    } finally {
+        _promptModelMacroScope = previous;
+    }
 }
 
 function allCompletionPrompts() {
@@ -2762,8 +2846,10 @@ function cachePromptModelCapture(key, capture, messageId) {
     const context = getContext();
     const message = context.chat?.[messageId];
     if (!message) return;
+    const swipeId = getMessageSwipeId(message);
+    // ST may finalize swipe metadata after CHARACTER_MESSAGE_RENDERED.
     const record = { capture: structuredClone(capture), message, messageId, chat: context.chat,
-        swipe: message.swipe_info?.[getMessageSwipeId(message)] };
+        swipeId, messageText: getCurrentMessageText(message) };
     _promptModelCaptureCache.delete(key);
     _promptModelCaptureCache.set(key, record);
     while (_promptModelCaptureCache.size > PROMPT_MODEL_CAPTURE_CACHE_LIMIT) {
@@ -2776,9 +2862,11 @@ function getOwnedPromptModelCapture(cache, key) {
     invalidateContextCache();
     const record = cache.get(key);
     const context = getContext();
+    const swipeId = record ? getMessageSwipeId(record.message) : 0;
     if (!record || context.chat !== record.chat || context.chat[record.messageId] !== record.message
         || buildProcessingKey(record.messageId) !== key
-        || record.message.swipe_info?.[getMessageSwipeId(record.message)] !== record.swipe) {
+        || swipeId !== record.swipeId
+        || getCurrentMessageText(record.message) !== record.messageText) {
         cache.delete(key);
         return null;
     }
@@ -2857,7 +2945,7 @@ function buildPromptModelMessages(messageId, narrative, capture, corrective = ''
     if (!capture?.chat) {
         messages.unshift({
             role: 'system',
-            content: 'You are the dedicated image-block composer. Do not continue the roleplay or explain your answer. Return only the requested IIG HTML image block.',
+            content: 'You are the dedicated image-block composer. Do not continue the roleplay or explain your answer. Return only the requested IIG HTML image blocks and their requested bookkeeping footers.',
         });
     }
     const type = capture?.type || 'normal';
@@ -2872,17 +2960,26 @@ function buildPromptModelMessages(messageId, narrative, capture, corrective = ''
     } else {
         messages.push({ role: 'assistant', content: narrative });
     }
-    const snapshot = getContext()?.substituteParams?.(pm.snapshot.content) || pm.snapshot.content;
     const capturedGuidance = capture && Object.hasOwn(capture, 'guidance')
         ? capture.guidance
         : getPromptModelGuidance();
-    const guidance = capturedGuidance
-        ? (getContext()?.substituteParams?.(capturedGuidance) || capturedGuidance)
-        : '';
+    const { snapshot, guidance, history } = withPromptModelMacroScope(messageId, () => {
+        const substitute = text => getContext()?.substituteParams?.(text) ?? text;
+        const hasSceneLog = /{{\s*ace_last3\s*}}/i.test(`${pm.snapshot.content}\n${capturedGuidance || ''}`);
+        const sceneMacro = '{{ace_last3}}';
+        const history = !hasSceneLog && getContext()?.macros?.registry?.hasMacro?.('ace_last3')
+            ? substitute(sceneMacro) : '';
+        return {
+            snapshot: substitute(pm.snapshot.content),
+            guidance: capturedGuidance ? substitute(capturedGuidance) : '',
+            history: history === sceneMacro ? '' : history,
+        };
+    });
     const outputRule = [
         snapshot,
+        history ? `[Recent illustration history]\n${history}` : '',
         guidance ? `[Additional image direction from the user - apply this to the image block only]\n${guidance}` : '',
-        '[Output ONLY the HTML image block in this exact structure: <img data-iig-instruction=\'{"prompt":"detailed visual prompt"}\' src="[IMG:GEN]">. Additional supported instruction fields may be included. No narrative, markdown fences, or commentary.]',
+        '[Output only the image HTML using this structure for each requested image: <img data-iig-instruction=\'{"prompt":"detailed visual prompt"}\' src="[IMG:GEN]">. Follow the image count requested in the image instructions. Additional supported instruction fields and image wrappers may be included. If bookkeeping footers are requested, put exactly one matching footer immediately after each corresponding image wrapper. For a selected-image rewrite, return only the one requested image tag without footers. No narrative, markdown fences, or commentary.]',
         corrective,
     ].filter(Boolean).join('\n');
     messages.push({ role: 'user', content: outputRule });
@@ -3310,6 +3407,10 @@ function promptModelSourceHasSidecar(message) {
         || narrative.includes('data-iig-instruction');
 }
 
+function notifyPromptModelSidecarChanged() {
+    if (!_iigDisposed) window.dispatchEvent(new CustomEvent('iig:sidecar-changed'));
+}
+
 function writePromptModelDisplayText(message, displayText) {
     if (!message.extra || typeof message.extra !== 'object') message.extra = {};
     message.extra.display_text = displayText;
@@ -3319,6 +3420,7 @@ function writePromptModelDisplayText(message, displayText) {
         if (!swipeInfo.extra || typeof swipeInfo.extra !== 'object') swipeInfo.extra = {};
         swipeInfo.extra.display_text = displayText;
     }
+    notifyPromptModelSidecarChanged();
 }
 
 function appendPromptModelSidecar(message, block) {
@@ -3361,6 +3463,7 @@ function removePromptModelArtifacts(message) {
         if (swipeCleaned.trim() === String(message.mes || '').trim()) delete swipeExtra.display_text;
         else swipeExtra.display_text = swipeCleaned;
     }
+    notifyPromptModelSidecarChanged();
     return true;
 }
 
@@ -3651,7 +3754,7 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
         const cleanNarrative = tag.sourceKey === 'mes'
             ? source.slice(0, tag.sourceIndex) + source.slice(tag.sourceIndex + tag.fullMatch.length)
             : String(message.mes || '');
-        const selected = `[Rewrite only this selected image instruction, preserving relevant reference names and configuration. Return exactly one pending image, not the surrounding block.]\n${JSON.stringify(parseInstructionObject(originalInstruction))}`;
+        const selected = `[Rewrite only this selected image instruction, preserving relevant reference names and configuration. Return exactly one pending image, not the surrounding block or a bookkeeping footer.]\n${JSON.stringify(parseInstructionObject(originalInstruction))}`;
         const messages = sidecar
             ? buildPromptModelMessages(messageId, cleanNarrative, capture, selected)
             : buildMainModelRerollMessages(cleanNarrative, capture, selected);
@@ -3740,6 +3843,7 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
             if (stop) stop.disabled = true;
             tagAbortControllers.delete(tagId);
             for (const entry of writes) entry.owner[entry.field] = entry.value;
+            notifyPromptModelSidecarChanged();
             expected = { mes: message.mes, display: message.extra?.display_text,
                 swipe: swipes?.[swipeId], swipeDisplay: swipeInfo?.extra?.display_text };
             try {
@@ -3754,6 +3858,7 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
                     restored = true;
                 }
                 if (restored && !_iigDisposed && sameScope()) {
+                    notifyPromptModelSidecarChanged();
                     try { await context.saveChat(); }
                     catch (_) { iigLog('ERROR', 'Selected image recovery save failed'); }
                 }
@@ -3998,6 +4103,7 @@ function writePromptModelEditedSource(message, { narrative, sidecar }, swipeId =
         if (displayText) swipeInfo.extra.display_text = displayText;
         else delete swipeInfo.extra.display_text;
     }
+    notifyPromptModelSidecarChanged();
 }
 
 async function copyPromptModelEditedMessage(button, textarea, message) {
@@ -4517,6 +4623,7 @@ function isRefScopeStateCurrent(scopeState, settings = getSettings(), context = 
 
 let _refScopeRevision = 0;
 let _refFolderClearInProgress = false;
+let _refsPackSaveInProgress = false;
 
 function getActiveRefScope({ forWrite = false } = {}) {
     const state = resolveRefScopeState(getSettings(), getContext(), { forWrite });
@@ -4534,7 +4641,7 @@ function getActiveRefScope({ forWrite = false } = {}) {
 
 function setRefMutationControlsDisabled(disabled) {
     if (_iigDisposed) return;
-    document.querySelectorAll('.iig-ref-file-input, .iig-ref-delete-btn, .iig-ref-packs-btn, .iig-ref-name, #iig_ref_scope, #iig_refs_reset_scope')
+    document.querySelectorAll('.iig-ref-file-input, .iig-ref-delete-btn, .iig-ref-packs-btn, .iig-ref-name, #iig_ref_scope, #iig_refs_reset_scope, #iig_refs_save_pack')
         .forEach(element => { element.disabled = !!disabled; });
 }
 
@@ -4771,7 +4878,7 @@ function setModelPickerOpen(inputId, open) {
     if (!picker) return;
     const { input, toggle, list } = picker;
     if (!open) {
-        if (list.contains(document.activeElement)) input.focus();
+        if (list.contains(document.activeElement)) toggle.focus({ preventScroll: true });
         setModelPickerActiveOption(input, list, null);
     }
     list.hidden = !open;
@@ -4793,9 +4900,9 @@ function renderModelPickerOptions(inputId, query = '') {
     if (_iigDisposed) return;
     const picker = getModelPicker(inputId);
     if (!picker) return;
-    const { input, list } = picker;
+    const { input, toggle, list } = picker;
     const catalog = _modelCatalogs.get(inputId) || [];
-    if (list.contains(document.activeElement)) input.focus();
+    if (list.contains(document.activeElement)) toggle.focus({ preventScroll: true });
     input.removeAttribute('aria-activedescendant');
     list.replaceChildren();
 
@@ -4843,10 +4950,11 @@ function updateModelCatalog(inputId, models, open = false, merge = false) {
     for (const model of Array.isArray(models) ? models : []) {
         const value = String(model?.value ?? model?.id ?? model?.name ?? model ?? '').trim();
         if (!value || catalog.has(value)) continue;
-        const label = String(model?.label ?? model?.name ?? model?.id ?? model ?? value).trim() || value;
+        const label = String(model?.label ?? model?.name ?? value).trim() || value;
         catalog.set(value, { value, label });
     }
-    _modelCatalogs.set(inputId, [...catalog.values()]);
+    const compare = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare;
+    _modelCatalogs.set(inputId, [...catalog.values()].sort((a, b) => compare(a.label, b.label) || compare(a.value, b.value)));
     renderModelPickerOptions(inputId);
     setModelPickerOpen(inputId, open);
 }
@@ -4859,6 +4967,11 @@ function bindModelPicker(inputId) {
 
     if (root.dataset.iigPickerBound) return;
     root.dataset.iigPickerBound = '1';
+    bindIig(input, 'click', () => {
+        if (!list.hidden) return;
+        renderModelPickerOptions(inputId);
+        setModelPickerOpen(inputId, true);
+    });
     bindIig(input, 'input', () => {
         if ((_modelCatalogs.get(inputId)?.length || 0) === 0) return;
         renderModelPickerOptions(inputId, input.value);
@@ -4866,47 +4979,44 @@ function bindModelPicker(inputId) {
     });
     bindIig(input, 'keydown', event => {
         if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+        if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) {
+            if (!list.hidden) setModelPickerActiveOption(input, list, null);
+            return;
+        }
         if (list.hidden) {
-            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-            renderModelPickerOptions(inputId, input.value);
+            if (event.key === 'Enter') return;
+            renderModelPickerOptions(inputId);
             setModelPickerOpen(inputId, true);
         }
+        event.preventDefault();
         const options = [...list.querySelectorAll('.iig-model-option')];
         const index = options.findIndex(option => option.id === input.getAttribute('aria-activedescendant'));
         if (event.key === 'Enter') {
-            const option = options[index] || options[0];
-            if (option) {
-                event.preventDefault();
-                option.click();
-            }
+            if (options[index]) options[index].click();
+            else setModelPickerOpen(inputId, false);
             return;
         }
-        let next;
-        if (event.key === 'ArrowDown') next = Math.min(index + 1, options.length - 1);
-        else if (event.key === 'ArrowUp') next = index < 0 ? options.length - 1 : Math.max(0, index - 1);
-        else if (event.key === 'Home') next = 0;
-        else if (event.key === 'End') next = options.length - 1;
-        else return;
-        event.preventDefault();
+        const next = event.key === 'ArrowDown' ? Math.min(index + 1, options.length - 1)
+            : index < 0 ? options.length - 1 : Math.max(0, index - 1);
         setModelPickerActiveOption(input, list, options[next]);
     });
-    bindIig(toggle, 'click', () => {
+    bindIig(toggle, 'click', event => {
         const willOpen = list.hidden;
         if (willOpen) renderModelPickerOptions(inputId);
         setModelPickerOpen(inputId, willOpen);
-        if (willOpen) input.focus();
+        (willOpen && event.detail === 0 ? input : toggle).focus({ preventScroll: true });
     });
     bindIig(list, 'pointerdown', event => {
-        // Keep focus through selection; pointer cancellation still allows touch scrolling and click.
-        if (event.button === 0 && event.target.closest('.iig-model-option')) event.preventDefault();
+        // Preserve mouse focus without cancelling native touch scrolling.
+        if (event.pointerType === 'mouse' && event.button === 0 && event.target.closest('.iig-model-option')) event.preventDefault();
     });
     bindIig(list, 'click', event => {
         const option = event.target.closest('.iig-model-option');
         if (!option) return;
+        (document.activeElement === input ? input : toggle).focus({ preventScroll: true });
         input.value = option.dataset.model || '';
         input.dispatchEvent(new Event('input', { bubbles: true }));
         setModelPickerOpen(inputId, false);
-        input.focus();
     });
     bindIig(root, 'keydown', event => {
         if (event.key === 'Escape' && !event.isComposing && !list.hidden) {
@@ -4948,8 +5058,10 @@ function detectImageMimeFromBase64(rawBase64) {
     return 'image/jpeg';
 }
 
-// Resize + JPEG-compress refs for smaller payloads.
-function compressBase64Image(rawBase64, maxDim = 768, quality = 0.8) {
+const REF_IMAGE_DIM = 768;
+const REF_IMAGE_QUALITY = 0.8;
+
+function resizeBase64Image(rawBase64, { type = 'image/jpeg', preserve = false } = {}) {
     return new Promise((resolve, reject) => {
         throwIfSignalAborted();
         const mime = detectImageMimeFromBase64(rawBase64);
@@ -4962,26 +5074,35 @@ function compressBase64Image(rawBase64, maxDim = 768, quality = 0.8) {
         _iigLifetime.signal.addEventListener('abort', abort, { once: true });
         img.onload = () => {
             release();
+            let canvas;
             try {
                 throwIfSignalAborted();
                 let w = img.width, h = img.height;
-                if (w > maxDim || h > maxDim) {
-                    const scale = maxDim / Math.max(w, h);
-                    w = Math.round(w * scale);
-                    h = Math.round(h * scale);
+                if (!w || !h) throw new Error('Image has no dimensions');
+                if (preserve && mime === type && w <= REF_IMAGE_DIM && h <= REF_IMAGE_DIM) {
+                    resolve(rawBase64);
+                    return;
                 }
-                const canvas = document.createElement('canvas');
+                if (w > REF_IMAGE_DIM || h > REF_IMAGE_DIM) {
+                    const scale = REF_IMAGE_DIM / Math.max(w, h);
+                    w = Math.max(1, Math.round(w * scale));
+                    h = Math.max(1, Math.round(h * scale));
+                }
+                canvas = document.createElement('canvas');
                 canvas.width = w;
                 canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                const dataUrl = canvas.toDataURL(type, REF_IMAGE_QUALITY);
                 const b64 = dataUrl.split(',')[1];
-                iigLog('DEBUG:refs', `Compressed reference image (${mime}): ${img.width}x${img.height} -> ${w}x${h}, ~${Math.round(b64.length / 1024)}KB`);
                 resolve(b64);
             } catch (error) { reject(error); }
+            finally {
+                if (canvas) canvas.width = canvas.height = 0;
+                img.src = '';
+            }
         };
-        img.onerror = () => { release(); reject(new Error(`Failed to load image for compression (detected MIME: ${mime})`)); };
+        img.onerror = () => { release(); img.src = ''; reject(new Error(`Failed to load reference image (detected MIME: ${mime})`)); };
         img.src = `data:${mime};base64,${rawBase64}`;
     });
 }
@@ -5317,6 +5438,61 @@ async function deleteRefFileOnServer(pathOnServer) {
     } catch (e) {
         iigLog('WARN', `deleteRefFileOnServer error for ${pathOnServer}: ${e.message}`);
         return false;
+    }
+}
+
+async function deleteUnusedRefFiles(refs, scopeState) {
+    const paths = new Set(refs.filter(ref => ref?.imagePath && !ref.packAssetId).map(ref => ref.imagePath));
+    for (const ref of refs) {
+        if (ref?.packAssetId) paths.delete(ref.imagePath);
+    }
+    const retainUsed = container => {
+        for (const ref of [container?.charRef, container?.userRef, ...(container?.npcReferences || [])]) {
+            if (ref?.imagePath) paths.delete(ref.imagePath);
+        }
+    };
+    const retainLoaded = () => {
+        const settings = getSettings();
+        retainUsed(settings);
+        Object.values(settings.characterRefs || {}).forEach(retainUsed);
+        retainUsed(getContext()?.chatMetadata?.iig_refs);
+        retainUsed(scopeState?.chatMetadata?.iig_refs);
+    };
+    retainLoaded();
+    if (!paths.size || _iigDisposed || _refFolderClearInProgress) return;
+    try {
+        // Scoped sets can share files with chats that are not currently open.
+        const response = await fetchWithTimeout('/api/chats/recent', {
+            method: 'POST',
+            headers: getContext().getRequestHeaders(),
+            body: JSON.stringify({ metadata: true, max: 1001 }),
+        }, 15000);
+        if (!response.ok) {
+            response.iigDiscard?.();
+            throw new Error(`Reference usage check failed (${response.status})`);
+        }
+        const chats = await response.json();
+        if (!Array.isArray(chats) || chats.length >= 1001) return;
+        for (const chat of chats) {
+            if (!chat || typeof chat.file_name !== 'string' || (chat.chat_items > 0 && !chat.chat_metadata)) return;
+            const ownerKey = chat.group != null ? `group:${chat.group}` : chat.avatar ? `character:${chat.avatar}` : null;
+            // The edited chat's saved metadata can lag behind its in-memory state.
+            if (scopeState?.storageScope === 'per-chat' && ownerKey === scopeState.ownerKey
+                && (chat.file_id ?? chat.file_name.replace(/\.jsonl$/, '')) === scopeState.chatId) continue;
+            retainUsed(chat.chat_metadata?.iig_refs);
+        }
+        retainLoaded();
+        for (const path of paths) {
+            if (_iigDisposed || _refFolderClearInProgress) break;
+            retainLoaded();
+            if (!paths.has(path)) continue;
+            if (await deleteRefFileOnServer(path)) {
+                invalidateRefB64Cache(path);
+                markRefStorageUsageStale();
+            }
+        }
+    } catch (error) {
+        if (!_iigDisposed) iigLog('WARN', 'Reference cleanup failed:', error);
     }
 }
 
@@ -8042,6 +8218,15 @@ function updateRefScopeUI() {
 
     const resetRow = document.getElementById('iig_ref_scope_reset_row');
     if (resetRow) resetRow.classList.toggle('iig-hidden', scope === 'global');
+    const savePack = document.getElementById('iig_refs_save_pack');
+    if (savePack) {
+        savePack.classList.toggle('iig-hidden', scope !== 'per-character');
+        const refs = state.container;
+        const hasImages = [refs.charRef, refs.userRef, ...refs.npcReferences.slice(0, 4)]
+            .some(ref => ref?.imagePath || ref?.imageBase64 || ref?.imageData);
+        savePack.disabled = !state.owner || !hasImages || _refsPackSaveInProgress || _refFolderClearInProgress;
+        savePack.setAttribute('aria-busy', String(_refsPackSaveInProgress));
+    }
     const reset = document.getElementById('iig_refs_reset_scope');
     if (reset) {
         const hasOwn = scope === 'per-character'
@@ -8567,7 +8752,7 @@ function createSettingsUI() {
                                 <div class="iig-model-picker">
                                     <input type="text" id="iig_model" class="text_pole flex1"
                                            value="${sanitizeForHtml(settings.model || '')}"
-                                           autocomplete="off" spellcheck="false" role="combobox"
+                                           autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" role="combobox"
                                            aria-autocomplete="list" aria-controls="iig_model_options" aria-expanded="false">
                                     <button type="button" id="iig_model_toggle" class="menu_button iig-model-toggle"
                                             title="Show or hide model list" aria-label="Show or hide model list" data-i18n="[title]iig_ui_toggleModels;[aria-label]iig_ui_toggleModels"
@@ -8646,6 +8831,9 @@ function createSettingsUI() {
                                     <div>
                                         <p id="iig_ref_scope_label" class="hint"></p>
                                         <div id="iig_ref_scope_reset_row" class="iig-maintenance-row">
+                                            <button type="button" id="iig_refs_save_pack" class="menu_button iig-maint-btn iig-hidden">
+                                                <i class="fa-solid fa-box-archive" aria-hidden="true"></i> <span data-i18n="iig_pack_saveRefs">Save as Pack</span>
+                                            </button>
                                             <button type="button" id="iig_refs_reset_scope" class="menu_button iig-maint-btn">
                                                 <i class="fa-solid fa-rotate-left"></i> <span data-i18n="iig_ui_resetScope">Reset scope</span>
                                             </button>
@@ -8731,7 +8919,7 @@ function createSettingsUI() {
                                     <div class="iig-model-actions iig-theme-control">
                                         <div class="iig-model-picker">
                                             <input type="text" id="iig_pm_model" class="text_pole flex1" value="${sanitizeForHtml(pm.model)}"
-                                                   autocomplete="off" spellcheck="false" role="combobox"
+                                                   autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" role="combobox"
                                                    aria-autocomplete="list" aria-controls="iig_pm_model_options" aria-expanded="false">
                                             <button type="button" id="iig_pm_model_toggle" class="menu_button iig-model-toggle"
                                                     title="${sanitizeForHtml(pmT('showModels'))}" aria-label="${sanitizeForHtml(pmT('showModels'))}"
@@ -8774,7 +8962,7 @@ function createSettingsUI() {
                                     <div class="iig-model-actions iig-theme-control">
                                         <div class="iig-model-picker">
                                             <input type="text" id="iig_pm_gemini_model" class="text_pole flex1" value="${sanitizeForHtml(pm.gemini.model)}"
-                                                   autocomplete="off" spellcheck="false" role="combobox"
+                                                   autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" role="combobox"
                                                    aria-autocomplete="list" aria-controls="iig_pm_gemini_model_options" aria-expanded="false">
                                             <button type="button" id="iig_pm_gemini_model_toggle" class="menu_button iig-model-toggle"
                                                     title="${sanitizeForHtml(pmT('showModels'))}" aria-label="${sanitizeForHtml(pmT('showModels'))}"
@@ -8971,8 +9159,6 @@ const PACK_ADDED_AT_INDEX = 'packAddedAt';
 const PACK_NAME_INDEX = 'packName';
 const PACKS_PAGE_SIZE = 12;
 const PACK_MAX_BYTES = 12 * 1024 * 1024;
-const PACK_IMAGE_DIM = 768;
-const PACK_IMAGE_QUALITY = 0.8;
 const PACK_THUMB_DIM = 512;
 const PACK_THUMB_QUALITY = 0.86;
 const PACK_THUMB_VERSION = 2;
@@ -9118,11 +9304,12 @@ function normalizePackSort(value) {
     return Object.hasOwn(PACK_SORT_CONFIG, value) ? value : 'newest';
 }
 
-/** Newest first. */
 async function listPacks() {
     const packs = await packsTransaction([PACKS_STORE], 'readonly', tx =>
         packsRequest(tx.objectStore(PACKS_STORE).getAll()));
-    return (packs || []).sort((a, b) => (b?.createdAt || 0) - (a?.createdAt || 0));
+    const compare = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare;
+    return (packs || []).sort((a, b) => compare(a?.name || '', b?.name || '')
+        || (b?.createdAt || 0) - (a?.createdAt || 0));
 }
 
 async function createPack(name) {
@@ -9249,7 +9436,52 @@ async function getPackAssetBlob(assetId) {
     const record = await packsTransaction([ASSETS_STORE], 'readonly', tx =>
         packsRequest(tx.objectStore(ASSETS_STORE).get(assetId)));
     if (!record?.blob) throw new Error('Image is no longer in storage');
-    return { blob: record.blob, name: record.name, type: record.type };
+    return record.blob;
+}
+
+let _packRefWork = Promise.resolve();
+
+function withPackRefLock(work) {
+    const pending = _packRefWork.then(() => {
+        throwIfSignalAborted();
+        const locks = globalThis.navigator?.locks;
+        return locks?.request
+            ? locks.request('iig-pack-ref-files', { signal: _iigLifetime.signal }, work)
+            : work();
+    });
+    _packRefWork = pending.catch(() => {});
+    return pending;
+}
+
+async function ensurePackRefImage(assetId, isCurrent) {
+    if (typeof assetId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(assetId)) throw new Error('Invalid pack image ID');
+    const filename = `iig_ref_pack_${assetId}`;
+    const path = `/user/images/iig_refs/${filename}.jpeg`;
+    return withPackRefLock(async () => {
+        if (!isCurrent()) return null;
+        const exists = await packsTransaction([ASSETS_STORE], 'readonly', async tx =>
+            packsRequest(tx.objectStore(ASSETS_STORE).count(assetId)));
+        if (!exists) throw new Error('Image is no longer in storage');
+        if (!isCurrent()) return null;
+        const response = await fetchWithTimeout(path, { method: 'HEAD', cache: 'no-store', redirect: 'error' }, 10000);
+        try {
+            if (!isCurrent()) return null;
+            if (response.status === 200 && /^image\/jpeg(?:;|$)/i.test(response.headers.get('content-type') || '')) return path;
+            if (response.status !== 404) throw new Error(`Pack reference check failed (HTTP ${response.status})`);
+        } finally { response.iigDiscard?.(); }
+
+        const blob = await getPackAssetBlob(assetId);
+        if (!isCurrent()) return null;
+        const raw = await readIigBase64(blob);
+        if (!isCurrent()) return null;
+        const prepared = await resizeBase64Image(raw, { preserve: true });
+        if (!isCurrent()) return null;
+        const savedPath = await saveRefImageToFile(prepared, 'pack', filename);
+        if (savedPath !== path) throw new Error('Unexpected pack reference path');
+        invalidateRefB64Cache(path);
+        markRefStorageUsageStale();
+        return path;
+    });
 }
 
 async function upgradePackAssetThumbnail(assetId, expectedPackId) {
@@ -9374,14 +9606,14 @@ async function buildPackThumbnail(file, compress = false) {
         // New imports share one decode; upgrades only replace the thumbnail.
         for (const key of compress ? ['blob', 'thumb'] : ['thumb']) {
             throwIfSignalAborted();
-            const scale = Math.min(1, (key === 'blob' ? PACK_IMAGE_DIM : PACK_THUMB_DIM) / Math.max(width, height));
+            const scale = Math.min(1, (key === 'blob' ? REF_IMAGE_DIM : PACK_THUMB_DIM) / Math.max(width, height));
             canvas.width = Math.max(1, Math.round(width * scale));
             canvas.height = Math.max(1, Math.round(height * scale));
             context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
             // A stalled encoder would otherwise hold the popup busy with no way out.
             const blob = await waitIig(new Promise((resolve, reject) => {
                 timer = setTimeout(() => reject(new Error('decode')), PACK_ENCODE_TIMEOUT_MS);
-                canvas.toBlob(resolve, 'image/jpeg', key === 'blob' ? PACK_IMAGE_QUALITY : PACK_THUMB_QUALITY);
+                canvas.toBlob(resolve, 'image/jpeg', key === 'blob' ? REF_IMAGE_QUALITY : PACK_THUMB_QUALITY);
             }));
             clearTimeout(timer);
             throwIfSignalAborted();
@@ -9396,6 +9628,79 @@ async function buildPackThumbnail(file, compress = false) {
         clearTimeout(timer);
         bitmap?.close?.();
         if (canvas) canvas.width = canvas.height = 0;
+    }
+}
+
+async function saveActiveRefsAsPack() {
+    if (_iigDisposed || _refsPackSaveInProgress || _refFolderClearInProgress) return;
+    const scope = getActiveRefScope();
+    if (scope.requestedScope !== 'per-character' || !scope.owner) return;
+    const fingerprint = cheapRefsHash(scope.container);
+    const isCurrent = () => isRefScopeStateCurrent(scope) && !_refFolderClearInProgress
+        && resolveRefScopeState(getSettings(), getContext()).container === scope.container
+        && cheapRefsHash(scope.container) === fingerprint;
+    const refs = [scope.container.charRef, scope.container.userRef, ...scope.container.npcReferences.slice(0, 4)]
+        .map((ref, index) => ({
+            ...ref,
+            name: sanitizePackAssetName(ref?.name) || (index < 2
+                ? iigT(index === 0 ? 'iig_ui_charAlt' : 'iig_ui_userAlt')
+                : `${iigT('iig_ui_npc')} ${index - 1}`),
+        }))
+        .filter(ref => ref.imagePath || ref.imageBase64 || ref.imageData);
+    if (!refs.length) return;
+    _refsPackSaveInProgress = true;
+    updateRefScopeUI();
+    try {
+        const input = await showIigInput(sanitizeForHtml(packT('saveRefs')), sanitizeForHtml(packT('newPackPrompt')), scope.owner.label);
+        if (input == null || !isCurrent()) return;
+        const name = sanitizePackName(input);
+        if (!name) {
+            toastr.warning(sanitizeForHtml(packT('nameRequired')), sanitizeForHtml(packT('title')), { escapeHtml: false });
+            return;
+        }
+        const assets = [];
+        for (const ref of refs) {
+            if (!isCurrent()) return;
+            let blob;
+            if (ref.imagePath) {
+                const response = await fetchWithTimeout(assertSafeMediaUrl(ref.imagePath, 'reference'), {}, 15000);
+                if (!response.ok || Number(response.headers.get('content-length')) > PACK_MAX_BYTES) {
+                    response.iigDiscard?.();
+                    throw new Error('Reference image could not be read');
+                }
+                blob = await response.blob();
+            } else {
+                const encoded = ref.imageBase64 || ref.imageData;
+                if (encoded.length > PACK_MAX_BYTES * 4 / 3 + 128) throw new Error('Reference image exceeds pack size limit');
+                blob = base64ToImageBlob(encoded).blob;
+            }
+            if (!isCurrent()) return;
+            if (!blob.size || blob.size > PACK_MAX_BYTES) throw new Error('Reference image exceeds pack size limit');
+            const type = await sniffImageType(blob);
+            if (!type) throw new Error('Unsupported reference image');
+            // Keep the saved image bytes; only its small gallery thumbnail needs encoding.
+            blob = blob.slice(0, blob.size, type);
+            const { thumb } = await buildPackThumbnail(blob);
+            assets.push({ name: ref.name, type, blob, thumb, thumbVersion: PACK_THUMB_VERSION,
+                bytes: blob.size + thumb.size, addedAt: Date.now() });
+        }
+        if (!isCurrent()) return;
+        const pack = { id: packsNewId(), name, createdAt: Date.now() };
+        await packsTransaction([PACKS_STORE, ASSETS_STORE], 'readwrite', async tx => {
+            if (!isCurrent()) throw Object.assign(new Error('Reference set changed'), { name: 'AbortError' });
+            tx.objectStore(PACKS_STORE).add(pack);
+            for (const asset of assets) tx.objectStore(ASSETS_STORE).add({ ...asset, id: packsNewId(), packId: pack.id });
+        });
+        if (!_iigDisposed) toastr.success(sanitizeForHtml(packT('refsSaved', { count: assets.length, name })),
+            sanitizeForHtml(packT('title')), { escapeHtml: false });
+    } catch (error) {
+        if (_iigDisposed || !isCurrent()) return;
+        iigLog('WARN', 'Image Packs: saving references failed', error);
+        toastr.error(sanitizeForHtml(packT(error?.name === 'QuotaExceededError' ? 'quotaExceeded' : 'saveRefsFailed')),
+            sanitizeForHtml(packT('title')), { escapeHtml: false });
+    } finally {
+        _refsPackSaveInProgress = false;
+        updateRefScopeUI();
     }
 }
 
@@ -9427,7 +9732,8 @@ async function importPackFile(packId, file, crop = null) {
             if (cropped === null) return 'cancelled';
             source = base64ToImageBlob(`data:image/jpeg;base64,${cropped}`).blob;
         }
-        built = await buildPackThumbnail(source, true);
+        built = await buildPackThumbnail(source, !crop);
+        if (crop) built.blob = source;
     } catch (_) {
         throwIfSignalAborted();
         return 'decode';
@@ -9833,10 +10139,8 @@ async function openImagePacksPopup(onPick) {
         setStatus(packT('applying'));
         let ok = false;
         try {
-            const asset = await getPackAssetBlob(item.id);
             if (disposed || _iigDisposed) return;
-            const file = new File([asset.blob], asset.name || 'reference', { type: asset.type });
-            ok = await onPick(file, item);
+            ok = await onPick(item);
         } catch (error) {
             iigLog('ERROR', 'Image Packs: selection failed', error.message);
         }
@@ -10314,20 +10618,447 @@ async function openImagePacksPopup(onPick) {
     }
 }
 
+function drawIigCaption(canvas, caption, layout = canvas) {
+    if (!layout?.width || !layout.height || !caption.text.trim()) return null;
+    const ctx = canvas.getContext('2d');
+    const lines = caption.text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').split('\n');
+    ctx.save();
+    try {
+        ctx.font = `${caption.size}px sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.direction = 'ltr';
+        const metrics = lines.map(line => ctx.measureText(line));
+        const leftPads = metrics.map(metric => Math.max(0, metric.actualBoundingBoxLeft || 0));
+        const widths = metrics.map((metric, index) => leftPads[index] + Math.max(metric.width, metric.actualBoundingBoxRight || 0));
+        const width = Math.max(...widths);
+        const ascent = Math.max(caption.size * 0.8, ...metrics.map(metric => metric.actualBoundingBoxAscent || 0));
+        const descent = Math.max(caption.size * 0.2, ...metrics.map(metric => metric.actualBoundingBoxDescent || 0));
+        const lineHeight = Math.max(caption.size * 1.2, ascent + descent);
+        const padding = caption.stroke + 1;
+        const blockWidth = width + padding * 2;
+        const blockHeight = ascent + descent + (lines.length - 1) * lineHeight + padding * 2;
+        const margin = Math.min(4, layout.width * 0.02, layout.height * 0.02);
+        const scale = Math.min(1, (layout.width - margin * 2) / blockWidth, (layout.height - margin * 2) / blockHeight);
+        const box = {
+            width: blockWidth * scale,
+            height: blockHeight * scale,
+            travelX: Math.max(0, layout.width - margin * 2 - blockWidth * scale),
+            travelY: Math.max(0, layout.height - margin * 2 - blockHeight * scale),
+        };
+        box.left = margin + box.travelX * caption.x / 100;
+        box.top = margin + box.travelY * caption.y / 100;
+        ctx.translate(box.left, box.top);
+        ctx.scale(scale, scale);
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = caption.stroke * 2;
+        ctx.strokeStyle = caption.strokeColor;
+        ctx.fillStyle = caption.color;
+        lines.forEach((line, index) => {
+            const x = padding + (width - widths[index]) / 2 + leftPads[index];
+            const y = padding + ascent + index * lineHeight;
+            if (caption.stroke > 0) ctx.strokeText(line, x, y);
+            ctx.fillText(line, x, y);
+        });
+        return box;
+    } finally {
+        ctx.restore();
+    }
+}
+
+function createIigCaptionEditor(popup, getPreview, updateReady, fail) {
+    const captions = [];
+    let caption = { text: '', size: 48, color: '#ffffff', stroke: 3, strokeColor: '#000000', x: 50, y: 85 };
+    let activeIndex = -1;
+    const syncControls = [];
+    const events = new AbortController();
+    const on = (target, event, handler) => target.addEventListener(event, handler, { signal: events.signal });
+    const text = key => iigT(`iig_${key}`);
+    const node = (tag, className = '', content = '') => {
+        const element = document.createElement(tag);
+        element.className = className;
+        element.textContent = content;
+        return element;
+    };
+    const icon = glyph => {
+        const element = node('i', `fa-solid ${glyph}`);
+        element.setAttribute('aria-hidden', 'true');
+        return element;
+    };
+    const button = (key, glyph) => {
+        const element = node('button', 'menu_button');
+        element.type = 'button';
+        element.title = text(key);
+        element.setAttribute('aria-label', text(key));
+        element.append(icon(glyph), node('span', 'iig-caption-button-label', text(key)));
+        return element;
+    };
+    const root = node('div', 'iig-caption-editor');
+    root.id = `iig-caption-${popup.id}`;
+    popup.dlg.setAttribute('aria-label', text('cropTitle'));
+    popup.dlg.classList.add('iig-crop-popup');
+    const workspace = node('div', 'iig-caption-workspace');
+    const sidebar = node('aside', 'iig-caption-sidebar');
+    sidebar.setAttribute('aria-label', text('captionTools'));
+    const sidebarTools = node('div', 'iig-caption-sidebar-tools');
+    const toolbar = node('div', 'iig-caption-toolbar');
+    const cropButton = button('cropMode', 'fa-crop-simple');
+    const textButton = button('captionEdit', 'fa-font');
+    const addButton = button('captionAdd', 'fa-plus');
+    addButton.classList.add('iig-caption-add');
+    addButton.title = text('captionLimit');
+    const removeButton = button('captionRemove', 'fa-trash-can');
+    removeButton.classList.add('iig-caption-remove');
+    toolbar.append(cropButton, textButton);
+    const cropHelp = node('p', 'iig-caption-crop-help', text('captionCropHint'));
+    const stage = node('div', 'iig-caption-stage');
+    const preview = node('div', 'iig-caption-preview');
+    const canvas = node('canvas');
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', text('captionPreview'));
+    preview.append(canvas);
+    stage.append(popup.cropWrap, preview);
+    const panel = node('div', 'iig-caption-panel');
+    panel.id = `${root.id}-controls`;
+    textButton.setAttribute('aria-controls', panel.id);
+    const hint = node('p', 'iig-caption-hint', text('captionHint'));
+    const field = (key, ...controls) => {
+        const wrap = node('div', 'iig-caption-field');
+        const label = node('label', '', text(key));
+        label.id = `${root.id}-${key}`;
+        controls.forEach((control, index) => {
+            control.id = `${label.id}-${index}`;
+            control.setAttribute('aria-labelledby', label.id);
+        });
+        label.htmlFor = controls.at(-1).id;
+        wrap.append(label, ...controls);
+        return wrap;
+    };
+    const input = node('textarea', 'text_pole');
+    input.rows = 2;
+    input.maxLength = 300;
+    const selected = node('select', 'text_pole');
+    const grid = node('div', 'iig-caption-grid');
+
+    let disposed = false;
+    let textMode = false;
+    let baseCanvas = null;
+    let baseCrop = null;
+    let bounds = [];
+    let drag = null;
+    let frame = 0;
+    const draw = target => captions.map(block => drawIigCaption(target, block));
+    const redraw = () => {
+        if (disposed || !textMode || !baseCanvas || frame) return;
+        frame = requestAnimationFrame(() => {
+            frame = 0;
+            if (disposed || !textMode) return;
+            try {
+                canvas.width = baseCanvas.width;
+                canvas.height = baseCanvas.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(baseCanvas, 0, 0);
+                bounds = draw(canvas);
+                const box = bounds[activeIndex];
+                if (box) {
+                    ctx.save();
+                    const pixel = canvas.width / (canvas.clientWidth || canvas.width);
+                    ctx.lineWidth = pixel;
+                    ctx.strokeStyle = '#000000';
+                    ctx.strokeRect(box.left, box.top, box.width, box.height);
+                    ctx.setLineDash([4 * pixel, 4 * pixel]);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.strokeRect(box.left, box.top, box.width, box.height);
+                    ctx.restore();
+                }
+            } catch (_) { fail(); }
+        });
+    };
+    const colorControl = (key, label) => {
+        const control = node('input');
+        control.type = 'color';
+        control.value = caption[key];
+        on(control, 'input', () => {
+            if (/^#[0-9a-f]{6}$/i.test(control.value)) caption[key] = control.value;
+            redraw();
+        });
+        grid.append(field(label, control));
+        syncControls.push(() => { control.value = caption[key]; });
+    };
+    const numberControl = (key, label, min, max, step = 1) => {
+        const range = node('input');
+        const number = node('input', 'text_pole');
+        range.type = 'range';
+        number.type = 'number';
+        for (const control of [range, number]) {
+            control.min = String(min);
+            control.max = String(max);
+            control.step = String(step);
+            control.value = String(caption[key]);
+            const change = event => {
+                if (control.value !== '' && Number.isFinite(control.valueAsNumber)) {
+                    caption[key] = Math.min(max, Math.max(min, Math.round(control.valueAsNumber / step) / (1 / step)));
+                }
+                range.value = String(caption[key]);
+                if (control === range || event.type === 'change') number.value = String(caption[key]);
+                redraw();
+            };
+            on(control, 'input', change);
+            on(control, 'change', change);
+        }
+        const wrap = field(label, range, number);
+        wrap.classList.add('iig-caption-number');
+        if (key === 'size') wrap.classList.add('iig-caption-wide');
+        grid.append(wrap);
+        const sync = () => { range.value = number.value = String(Math.round(caption[key] * 10) / 10); };
+        syncControls.push(sync);
+        return sync;
+    };
+    colorControl('color', 'captionColor');
+    numberControl('size', 'captionSize', 8, 192);
+    numberControl('stroke', 'captionStroke', 0, 16);
+    colorControl('strokeColor', 'captionStrokeColor');
+    const syncX = numberControl('x', 'captionX', 0, 100, 0.1);
+    const syncY = numberControl('y', 'captionY', 0, 100, 0.1);
+    const selection = node('div', 'iig-caption-selection');
+    selection.append(field('captionSelect', selected), removeButton);
+    panel.append(selection, field('captionLabel', input), grid, hint);
+    sidebarTools.append(toolbar, addButton, cropHelp, panel);
+    sidebar.append(sidebarTools);
+    workspace.append(stage, sidebar);
+    root.append(workspace);
+    popup.content.replaceChildren(root);
+    const compactLayout = window.matchMedia('(max-width: 900px)');
+    const placeActions = () => (compactLayout.matches ? popup.body : sidebar).append(popup.buttonControls);
+    on(compactLayout, 'change', placeActions);
+    placeActions();
+
+    const syncMode = () => {
+        root.classList.toggle('iig-caption-text-mode', textMode);
+        preview.hidden = panel.hidden = !textMode;
+        cropHelp.hidden = textMode;
+        removeButton.hidden = !captions.length;
+        textButton.setAttribute('aria-pressed', String(textMode));
+        textButton.setAttribute('aria-expanded', String(textMode));
+        cropButton.setAttribute('aria-pressed', String(!textMode));
+        updateReady();
+    };
+    const refreshOptions = () => {
+        selected.replaceChildren(...captions.map((block, index) => {
+            const label = iigT('iig_captionBlock', { number: index + 1 });
+            const excerpt = block.text.trim().replace(/\s+/g, ' ').slice(0, 32);
+            return new Option(excerpt ? `${label} — ${excerpt}` : label, String(index));
+        }));
+        selected.value = String(activeIndex);
+    };
+    const selectCaption = index => {
+        if (!Number.isInteger(index) || !captions[index]) return;
+        activeIndex = index;
+        caption = captions[index];
+        selected.value = String(index);
+        input.value = caption.text;
+        syncControls.forEach(sync => sync());
+        drag = null;
+        redraw();
+    };
+    on(selected, 'change', () => selectCaption(Number(selected.value)));
+    on(input, 'input', () => {
+        caption.text = input.value.slice(0, input.maxLength);
+        refreshOptions();
+        updateReady();
+        redraw();
+    });
+    on(input, 'keydown', event => {
+        // Keep multiline input out of the host's Enter-to-confirm handler.
+        if (event.key === 'Enter') event.stopPropagation();
+    });
+    const showText = () => {
+        if (textMode) return true;
+        try {
+            ({ canvas: baseCanvas, crop: baseCrop } = getPreview());
+            if (!baseCanvas?.width || !baseCanvas.height) return false;
+        } catch (_) { fail(); return false; }
+        textMode = true;
+        syncMode();
+        redraw();
+        return true;
+    };
+    on(textButton, 'click', () => {
+        if (showText()) input.focus();
+    });
+    on(addButton, 'click', () => {
+        if (captions.length >= 8 || !showText()) return;
+        captions.push({ ...caption, text: '', x: 50, y: captions.length ? 50 : 85 });
+        selectCaption(captions.length - 1);
+        refreshOptions();
+        syncMode();
+        input.focus();
+    });
+    const showCrop = () => {
+        textMode = false;
+        drag = null;
+        bounds = [];
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
+        if (baseCanvas) baseCanvas.width = baseCanvas.height = 0;
+        baseCanvas = null;
+        baseCrop = null;
+        syncMode();
+    };
+    on(cropButton, 'click', showCrop);
+    on(removeButton, 'click', () => {
+        if (activeIndex < 0) return;
+        captions.splice(activeIndex, 1);
+        bounds = [];
+        activeIndex = Math.min(activeIndex, captions.length - 1);
+        if (captions.length) {
+            selectCaption(activeIndex);
+            syncMode();
+        } else {
+            input.value = caption.text = '';
+            showCrop();
+            addButton.focus();
+        }
+        refreshOptions();
+    });
+    const point = event => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: (event.clientX - rect.left) * canvas.width / rect.width, y: (event.clientY - rect.top) * canvas.height / rect.height };
+    };
+    on(canvas, 'pointerdown', event => {
+        if (event.button !== 0 || event.isPrimary === false) return;
+        const p = point(event);
+        const tolerance = 8 * canvas.width / canvas.getBoundingClientRect().width;
+        let hit = -1;
+        for (let index = bounds.length - 1; index >= 0; index--) {
+            const box = bounds[index];
+            if (box && p.x >= box.left - tolerance && p.x <= box.left + box.width + tolerance
+                && p.y >= box.top - tolerance && p.y <= box.top + box.height + tolerance) { hit = index; break; }
+        }
+        if (hit < 0) return;
+        selectCaption(hit);
+        event.preventDefault();
+        canvas.setPointerCapture(event.pointerId);
+        drag = { id: event.pointerId, ...p, startX: caption.x, startY: caption.y, ...bounds[hit] };
+    });
+    on(canvas, 'pointermove', event => {
+        if (!drag || event.pointerId !== drag.id) return;
+        const p = point(event);
+        if (drag.travelX > 0) caption.x = Math.min(100, Math.max(0, drag.startX + (p.x - drag.x) / drag.travelX * 100));
+        if (drag.travelY > 0) caption.y = Math.min(100, Math.max(0, drag.startY + (p.y - drag.y) / drag.travelY * 100));
+        syncX();
+        syncY();
+        redraw();
+    });
+    const endDrag = event => {
+        if (drag?.id !== event.pointerId) return;
+        drag = null;
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    };
+    on(canvas, 'pointerup', endDrag);
+    on(canvas, 'pointercancel', endDrag);
+    on(canvas, 'lostpointercapture', endDrag);
+    syncMode();
+    return {
+        setReady: ready => {
+            cropButton.disabled = !ready;
+            textButton.disabled = !ready || !captions.length;
+            addButton.disabled = !ready || captions.length >= 8;
+        },
+        capture: () => {
+            // Keep the geometry shown in Text mode, even after a viewport resize.
+            const preview = textMode ? { canvas: baseCanvas, crop: baseCrop } : getPreview();
+            try {
+                return {
+                    crop: { ...preview.crop },
+                    width: preview.canvas.width,
+                    height: preview.canvas.height,
+                    captions: captions.map(block => ({ ...block })),
+                };
+            } finally {
+                if (!textMode) preview.canvas.width = preview.canvas.height = 0;
+            }
+        },
+        destroy: () => {
+            disposed = true;
+            events.abort();
+            if (frame) cancelAnimationFrame(frame);
+            if (baseCanvas) baseCanvas.width = baseCanvas.height = 0;
+            canvas.width = canvas.height = 0;
+        },
+    };
+}
+
+function renderIigCrop(file, snapshot, signal) {
+    return new Promise((resolve, reject) => {
+        throwIfSignalAborted(signal);
+        const image = new Image();
+        const url = URL.createObjectURL(file);
+        const release = () => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', abort);
+            _iigLifetime.signal.removeEventListener('abort', abort);
+            image.onload = image.onerror = null;
+            image.src = '';
+            URL.revokeObjectURL(url);
+        };
+        const fail = error => { release(); reject(error); };
+        const abort = () => fail(Object.assign(new Error('Crop export aborted'), { name: 'AbortError' }));
+        const timer = setTimeout(() => fail(new Error('Crop export timed out')), 20000);
+        signal.addEventListener('abort', abort, { once: true });
+        _iigLifetime.signal.addEventListener('abort', abort, { once: true });
+        image.onerror = () => fail(new Error('Could not load the original image'));
+        image.onload = () => {
+            let canvas;
+            try {
+                throwIfSignalAborted(signal);
+                const { crop } = snapshot;
+                const x = Math.max(0, crop.x * image.naturalWidth);
+                const y = Math.max(0, crop.y * image.naturalHeight);
+                const width = Math.min(crop.width * image.naturalWidth, image.naturalWidth - x);
+                const height = Math.min(crop.height * image.naturalHeight, image.naturalHeight - y);
+                if (![x, y, width, height, snapshot.width, snapshot.height].every(Number.isFinite)
+                    || Math.min(width, height, snapshot.width, snapshot.height) <= 0) throw new Error('Invalid crop dimensions');
+                const scale = Math.min(1, REF_IMAGE_DIM / Math.max(width, height));
+                canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(width * scale));
+                canvas.height = Math.max(1, Math.round(height * scale));
+                const context = canvas.getContext('2d');
+                context.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height);
+                // Draw text in preview coordinates without scaling a text bitmap.
+                context.save();
+                context.scale(canvas.width / snapshot.width, canvas.height / snapshot.height);
+                for (const caption of snapshot.captions) drawIigCaption(canvas, caption, snapshot);
+                context.restore();
+                resolve(canvas);
+            } catch (error) {
+                if (canvas) canvas.width = canvas.height = 0;
+                reject(error);
+            } finally { release(); }
+        };
+        try { image.src = url; } catch (error) { fail(error); }
+    });
+}
+
 async function cropRefUpload(file) {
-    const rawBase64 = await readIigBase64(file);
-    // Crop an upright, reference-resolution preview, not the full-size camera image.
-    const preview = await compressBase64Image(rawBase64, 768, 0.8);
+    // Keep the working preview lossless and bounded for mobile.
+    const preview = await resizeBase64Image(await readIigBase64(file), { type: 'image/png' });
     throwIfSignalAborted();
     const ctx = getContext();
     const popup = new ctx.Popup(sanitizeForHtml(iigT('iig_cropTitle')), ctx.POPUP_TYPE.CROP, '', {
-        cropImage: `data:image/jpeg;base64,${preview}`,
+        cropImage: `data:image/png;base64,${preview}`,
         cropAspect: NaN,
+        okButton: iigT('iig_cropApply'),
+        allowVerticalScrolling: true,
     });
     const cropper = $(popup.cropImage).data('cropper');
+    const getCroppedCanvas = cropper?.getCroppedCanvas;
     const image = cropper?.image;
+    let captionEditor;
     let sizingImage;
     let finished = false;
+    let applying = false;
+    const exportController = new AbortController();
     let fail;
     const failure = new Promise(resolve => {
         fail = () => {
@@ -10342,18 +11073,40 @@ async function cropRefUpload(file) {
     const complete = popup.complete;
     // Host exports before onClosing, and its div controls do not honor disabled.
     popup.complete = async result => {
-        if (finished || (result >= ctx.POPUP_RESULT.AFFIRMATIVE && (!cropper?.ready || _iigDisposed))) return;
+        const affirmative = result >= ctx.POPUP_RESULT.AFFIRMATIVE;
+        if (finished || (affirmative && (applying
+            || !cropper?.ready || _iigDisposed || !captionEditor))) return;
+        let canvas;
         try {
+            if (affirmative) {
+                applying = true;
+                onReady();
+                canvas = await renderIigCrop(file, captionEditor.capture(), exportController.signal);
+                if (finished || _iigDisposed) return;
+                // The host omits quality; bind it only on this finished canvas.
+                canvas.toDataURL = canvas.toDataURL.bind(canvas, 'image/jpeg', REF_IMAGE_QUALITY);
+                cropper.getCroppedCanvas = () => canvas;
+            } else {
+                exportController.abort();
+            }
             const closing = complete.call(popup, result);
             finished = true;
             return await closing;
         } catch (_) {
-            finished = false;
-            fail();
+            if (!exportController.signal.aborted && !_iigDisposed) {
+                finished = false;
+                fail();
+            }
+        } finally {
+            applying = false;
+            if (canvas) canvas.width = canvas.height = 0;
         }
     };
     const onReady = () => {
-        if (!finished) popup.okButton.setAttribute('aria-disabled', String(!cropper?.ready));
+        if (!finished) {
+            popup.okButton.setAttribute('aria-disabled', String(applying || !cropper?.ready || !captionEditor));
+            captionEditor?.setReady(!applying && Boolean(cropper?.ready));
+        }
     };
     const onLoad = () => {
         sizingImage?.removeEventListener('error', fail);
@@ -10366,17 +11119,34 @@ async function cropRefUpload(file) {
     onReady();
     onLoad();
     try {
-        const result = await showIigPopup(popup);
+        const result = await showIigPopup(popup, () => {
+            if (!getCroppedCanvas) throw iigError('Could not crop the image', 'iig_cropFailed');
+            captionEditor = createIigCaptionEditor(popup, () => {
+                const crop = cropper.getData();
+                const { naturalWidth, naturalHeight } = cropper.getImageData();
+                return {
+                    canvas: getCroppedCanvas.call(cropper, { maxWidth: REF_IMAGE_DIM, maxHeight: REF_IMAGE_DIM }),
+                    crop: {
+                        x: crop.x / naturalWidth, y: crop.y / naturalHeight,
+                        width: crop.width / naturalWidth, height: crop.height / naturalHeight,
+                    },
+                };
+            }, onReady, fail);
+            onReady();
+        }, () => captionEditor?.destroy());
         if (result == null || _iigDisposed) return null;
         const cropped = typeof result === 'string' && result.match(/^data:image\/jpeg;base64,(.+)$/);
         if (!cropped) throw iigError('Could not crop the image', 'iig_cropFailed');
         return cropped[1];
     } finally {
         finished = true;
+        exportController.abort();
         popup.cropImage.removeEventListener('ready', onReady);
         popup.dlg.removeEventListener('error', fail, true);
         image?.removeEventListener('load', onLoad);
         sizingImage?.removeEventListener('error', fail);
+        captionEditor?.destroy();
+        if (cropper && getCroppedCanvas) cropper.getCroppedCanvas = getCroppedCanvas;
         // The host removes the dialog but leaves Cropper's document listeners alive.
         cropper?.destroy();
     }
@@ -10385,7 +11155,7 @@ async function cropRefUpload(file) {
 /** Returns the saved path, or null on crop cancellation/staleness. Other failures throw. */
 async function uploadRefFileToSlot(slot, refType, npcIndex, file, { crop = false, packAssetId = '' } = {}) {
     throwIfSignalAborted();
-    if (!slot || !file) throw iigError('No file provided', 'iig_noFile');
+    if (!slot || (!file && !packAssetId)) throw iigError('No file provided', 'iig_noFile');
     if (_refFolderClearInProgress) throw iigError('Reference folder is being cleared', 'iig_refFolderClearing');
 
     const scopeSettings = getSettings();
@@ -10394,6 +11164,7 @@ async function uploadRefFileToSlot(slot, refType, npcIndex, file, { crop = false
     const mutation = slot._iigRefMutation = Symbol();
     const originalRef = refType === 'npc' ? scopeHandle.container.npcReferences[npcIndex]
         : scopeHandle.container[`${refType}Ref`];
+    const previousRef = originalRef && { ...originalRef };
     const originalState = originalRef && [originalRef.name, originalRef.imagePath, originalRef.imageBase64, originalRef.imageData, originalRef.packAssetId];
     const isCurrent = () => {
         if (_iigDisposed || slot._iigRefMutation !== mutation || _refFolderClearInProgress || slot.isConnected === false || !isRefScopeStateCurrent(scopeHandle)) return false;
@@ -10403,17 +11174,22 @@ async function uploadRefFileToSlot(slot, refType, npcIndex, file, { crop = false
         return ref === originalRef && (!ref || [ref.name, ref.imagePath, ref.imageBase64, ref.imageData, ref.packAssetId]
             .every((value, index) => value === originalState[index]));
     };
-    const rawBase64 = crop ? await cropRefUpload(file) : await readIigBase64(file);
-    if (rawBase64 === null || !isCurrent()) return null;
-    const compressed = await compressBase64Image(rawBase64, 768, 0.8);
-    const label = refType === 'npc' ? `npc${npcIndex}` : refType;
-    const currentTypedName = slot.querySelector('.iig-ref-name')?.value?.trim() || '';
-    const nameSlug = sanitizeRefNameForFilename(currentTypedName);
-    const customFilename = nameSlug ? await pickUniqueRefFilename(refType, nameSlug) : null;
-    if (!isCurrent()) return null;
-    const savedPath = await saveRefImageToFile(compressed, label, customFilename);
-    if (!isCurrent()) {
-        if (!_iigDisposed) await deleteRefFileOnServer(savedPath);
+    let savedPath;
+    if (packAssetId) {
+        savedPath = await ensurePackRefImage(packAssetId, isCurrent);
+    } else {
+        const rawBase64 = crop ? await cropRefUpload(file) : await readIigBase64(file);
+        if (rawBase64 === null || !isCurrent()) return null;
+        const prepared = crop ? rawBase64 : await resizeBase64Image(rawBase64);
+        const label = refType === 'npc' ? `npc${npcIndex}` : refType;
+        const currentTypedName = slot.querySelector('.iig-ref-name')?.value?.trim() || '';
+        const nameSlug = sanitizeRefNameForFilename(currentTypedName);
+        const customFilename = nameSlug ? await pickUniqueRefFilename(refType, nameSlug) : null;
+        if (!isCurrent()) return null;
+        savedPath = await saveRefImageToFile(prepared, label, customFilename);
+    }
+    if (!savedPath || !isCurrent()) {
+        if (savedPath && !packAssetId && !_iigDisposed) await deleteRefFileOnServer(savedPath);
         return null;
     }
     Object.assign(scopeHandle, resolveRefScopeState(scopeSettings, scopeContext, { forWrite: true }));
@@ -10438,14 +11214,15 @@ async function uploadRefFileToSlot(slot, refType, npcIndex, file, { crop = false
     assignedRef.packAssetId = typeof packAssetId === 'string' ? packAssetId : '';
     if ('imageData' in assignedRef) assignedRef.imageData = '';
     if (prevPath && prevPath !== savedPath) invalidateRefB64Cache(prevPath);
-    invalidateRefB64Cache(savedPath);
+    if (!packAssetId) invalidateRefB64Cache(savedPath);
     saveActiveRefs(scopeHandle);
 
     const thumb = slot.querySelector('.iig-ref-thumb');
     if (thumb) thumb.src = savedPath;
     const thumbWrap = slot.querySelector('.iig-ref-thumb-wrap');
     if (thumbWrap) thumbWrap.classList.add('has-image');
-    markRefStorageUsageStale();
+    if (!packAssetId) markRefStorageUsageStale();
+    trackIigTask(deleteUnusedRefFiles([previousRef], scopeHandle));
     return savedPath;
 }
 
@@ -10495,9 +11272,10 @@ function bindRefSlotEvents() {
             else if (refType === 'user') slotRef = s.userRef;
             else if (refType === 'npc') slotRef = s.npcReferences[npcIndex];
 
-            if (!slotRef?.imagePath) return;
+            if (!slotRef?.imagePath || slotRef.packAssetId) return;
 
             const currentPath = slotRef.imagePath;
+            const previousRef = { ...slotRef };
             const currentFilename = currentPath.split('/').pop() || '';
             const nameSlug = sanitizeRefNameForFilename(currentName);
             if (!nameSlug) return;
@@ -10543,6 +11321,7 @@ function bindRefSlotEvents() {
                 const thumb = slot.querySelector('.iig-ref-thumb');
                 if (thumb) thumb.src = newPath;
                 markRefStorageUsageStale();
+                trackIigTask(deleteUnusedRefFiles([previousRef], scopeHandle));
 
                 iigLog('INFO', `Rename complete: ${newPath}`);
             } catch (e) {
@@ -10580,9 +11359,9 @@ function bindRefSlotEvents() {
         bindIig(packsBtn, 'click', () => {
             if (_refFolderClearInProgress) return;
             const label = refType === 'npc' ? `npc${npcIndex}` : refType;
-            return openImagePacksPopup(async (file, item) => {
+            return openImagePacksPopup(async item => {
                 try {
-                    const savedPath = await uploadRefFileToSlot(slot, refType, npcIndex, file, { packAssetId: item.id });
+                    const savedPath = await uploadRefFileToSlot(slot, refType, npcIndex, null, { packAssetId: item.id });
                     if (!savedPath || _iigDisposed) return false;
                     setPackedRefSlotAppearance(slot, item);
                     toastr.success(sanitizeForHtml(iigT('iig_photoSaved')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
@@ -10604,6 +11383,7 @@ function bindRefSlotEvents() {
             nameEditScope = null;
             const scopeHandle = getActiveRefScope({ forWrite: true });
             const s = scopeHandle.container;
+            const previousRef = refType === 'npc' ? s.npcReferences[npcIndex] : s[`${refType}Ref`];
             let prevPath = '';
             if (refType === 'char') {
                 prevPath = s.charRef?.imagePath || '';
@@ -10629,7 +11409,7 @@ function bindRefSlotEvents() {
             const label = refType === 'npc' ? `NPC ${npcIndex + 1}` : refType;
             iigLog('INFO', `Ref slot ${label}: cleared`);
             toastr.info(sanitizeForHtml(iigT('iig_slotCleared')), sanitizeForHtml(iigT('iig_title')), { timeOut: 2000, escapeHtml: false });
-
+            trackIigTask(deleteUnusedRefFiles([previousRef], scopeHandle));
         });
     }
 }
@@ -11107,22 +11887,31 @@ function bindSettingsEvents() {
         renderRefSlots();
     });
 
+    bindIig(document.getElementById('iig_refs_save_pack'), 'click', saveActiveRefsAsPack);
+
     bindIig(document.getElementById('iig_refs_reset_scope'), 'click', () => {
         const scope = normalizeRefScope(settings.refScope);
         const ctx = getContext();
+        const scopeState = getActiveRefScope();
+        let removedRefs;
         _refScopeRevision++;
         if (scope === 'per-chat' && ctx?.chatMetadata?.iig_refs) {
+            removedRefs = ctx.chatMetadata.iig_refs;
             delete ctx.chatMetadata.iig_refs;
             try { persistIigMetadata(ctx); } catch (error) { iigLog('WARN', 'Reference metadata save failed:', error); }
         } else if (scope === 'per-character') {
             const owner = getCurrentRefOwner(ctx);
             if (owner && settings.characterRefs?.[owner.key]) {
+                removedRefs = settings.characterRefs[owner.key];
                 delete settings.characterRefs[owner.key];
                 saveSettings();
             }
         }
         clearAllRefB64Cache();
         renderRefSlots();
+        if (removedRefs) trackIigTask(deleteUnusedRefFiles([
+            removedRefs.charRef, removedRefs.userRef, ...removedRefs.npcReferences,
+        ], scopeState));
         toastr.info(sanitizeForHtml(iigT(scope === 'per-chat'
             ? 'iig_ui_chatRefsReset'
             : 'iig_ui_characterRefsReset')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
@@ -11292,39 +12081,41 @@ function bindSettingsEvents() {
         btn.disabled = true;
         btn.style.opacity = '0.6';
         try {
-            const files = await listIigRefsFolder({ strict: true });
-            if (_iigDisposed) return;
-            if (files.length === 0) {
-                applyRefFolderClear(null, Date.now());
+            await withPackRefLock(async () => {
+                const files = await listIigRefsFolder({ strict: true });
+                if (_iigDisposed) return;
+                if (files.length === 0) {
+                    applyRefFolderClear(null, Date.now());
+                    const status = document.getElementById('iig_ref_storage_status');
+                    if (status) {
+                        status.textContent = iigT('iig_ui_storageEmpty');
+                        status.dataset.measured = '1';
+                    }
+                    toastr.info(sanitizeForHtml(iigT('iig_ui_storageAlreadyEmpty')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
+                    return;
+                }
+
+                const folderPrefix = getIigRefsPublicPrefix();
+                let deleted = 0;
+                let failed = 0;
+                const deletedNames = new Set();
+                const failedNames = [];
+                for (const name of files) {
+                    const path = `${folderPrefix}${name}`;
+                    const ok = !_iigDisposed && await deleteRefFileOnServer(path);
+                    if (ok) { deleted++; deletedNames.add(name); }
+                    else { failed++; failedNames.push(name); }
+                }
+                applyRefFolderClear(failed === 0 ? null : deletedNames, Date.now(), failedNames);
                 const status = document.getElementById('iig_ref_storage_status');
                 if (status) {
-                    status.textContent = iigT('iig_ui_storageEmpty');
-                    status.dataset.measured = '1';
+                    status.textContent = failed === 0 ? iigT('iig_ui_storageEmpty') : iigT('iig_ui_storageDeleteFailed', { count: failed });
+                    if (failed === 0) status.dataset.measured = '1';
+                    else delete status.dataset.measured;
                 }
-                toastr.info(sanitizeForHtml(iigT('iig_ui_storageAlreadyEmpty')), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
-                return;
-            }
-
-            const folderPrefix = getIigRefsPublicPrefix();
-            let deleted = 0;
-            let failed = 0;
-            const deletedNames = new Set();
-            const failedNames = [];
-            for (const name of files) {
-                const path = `${folderPrefix}${name}`;
-                const ok = !_iigDisposed && await deleteRefFileOnServer(path);
-                if (ok) { deleted++; deletedNames.add(name); }
-                else { failed++; failedNames.push(name); }
-            }
-            applyRefFolderClear(failed === 0 ? null : deletedNames, Date.now(), failedNames);
-            const status = document.getElementById('iig_ref_storage_status');
-            if (status) {
-                status.textContent = failed === 0 ? iigT('iig_ui_storageEmpty') : iigT('iig_ui_storageDeleteFailed', { count: failed });
-                if (failed === 0) status.dataset.measured = '1';
-                else delete status.dataset.measured;
-            }
-            toastr.success(sanitizeForHtml(iigT(failed ? 'iig_ui_storageClearedPartial' : 'iig_ui_storageCleared', { deleted, failed })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 3500, escapeHtml: false });
-            iigLog('INFO', `Clear refs folder: deleted=${deleted}, failed=${failed}, prefix=${folderPrefix}`);
+                toastr.success(sanitizeForHtml(iigT(failed ? 'iig_ui_storageClearedPartial' : 'iig_ui_storageCleared', { deleted, failed })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 3500, escapeHtml: false });
+                iigLog('INFO', `Clear refs folder: deleted=${deleted}, failed=${failed}, prefix=${folderPrefix}`);
+            });
         } catch (err) {
             iigLog('ERROR', 'Clear refs folder failed:', err.message);
             toastr.error(sanitizeForHtml(iigT('iig_ui_storageClearFailed', { detail: iigErrorText(err) })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { escapeHtml: false });
@@ -11568,6 +12359,7 @@ function cleanupIig() {
     window.IIG = {
         version: IIG_VERSION,
         cleanup: cleanupIig,
+        getPromptModelRouting,
         openSettings() {
             if (_iigDisposed) return false;
             try {
