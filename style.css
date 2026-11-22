@@ -2047,7 +2047,7 @@
     animation: none;
 }
 
-/* No zoom cursor on mobile (lightbox disabled) */
+/* Touch reveals the image actions. */
 @media (pointer: coarse) {
     .iig-generated-image {
         cursor: default;
@@ -2878,11 +2878,18 @@ details.iig-accordion[open] > :not(summary) {
 /* ==================== Lightbox ==================== */
 
 #iig_lightbox {
-    width: fit-content;
-    height: auto;
+    --lb-edge: var(--SmartThemeBorderColor, #454850);
+    --lb-accent: var(--SmartThemeQuoteColor, #6aa9ff);
+    width: min(1180px, 96dvw);
+    height: min(900px, 94dvh);
     min-height: 0;
-    max-width: 96vw;
-    padding: 8px;
+    min-width: 0;
+    max-height: 94dvh;
+    padding: 0;
+    border: 1px solid var(--lb-edge);
+    border-radius: 14px;
+    background: var(--SmartThemeBlurTintColor, #17191e);
+    color: var(--SmartThemeBodyColor, #f2f0eb);
 }
 
 #iig_lightbox:not([open]),
@@ -2893,43 +2900,37 @@ details.iig-accordion[open] > :not(summary) {
 
 #iig_lightbox::backdrop {
     background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: none;
 }
 
 #iig_lightbox .popup-body {
-    height: auto;
+    height: 100%; min-height: 0; padding: 0;
 }
 
 #iig_lightbox .popup-content {
     margin: 0;
-    padding: 4px;
-    overflow-y: auto;
+    flex: 1; min-height: 0; padding: 0; overflow: hidden;
 }
 
 .iig-lightbox-content {
-    position: relative;
-    max-width: 90vw;
+    height: 100%; min-height: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 10px;
 }
 
+.iig-lb-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #151619; touch-action: none; user-select: none; }
+.iig-lb-stage.zoomed { cursor: grab; }
+.iig-lb-stage.zoomed:active { cursor: grabbing; }
 .iig-lightbox-img {
-    max-width: 90vw;
-    max-height: max(60px, calc(90dvh - 140px));
-    border-radius: 10px;
-    object-fit: contain;
-    box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
+    width: 100%; height: 100%; object-fit: scale-down; pointer-events: none;
 }
 
 /* Lightbox action toolbar */
 .iig-lightbox-actions {
     display: flex;
-    gap: 8px;
-    justify-content: center;
+    align-items: center; gap: 4px; padding: 5px 8px max(5px, env(safe-area-inset-bottom)); border-top: 1px solid var(--lb-edge);
 }
+.iig-lb-download { margin-inline-start: auto; }
 
 .iig-lightbox-action-btn {
     display: flex;
@@ -2937,12 +2938,11 @@ details.iig-accordion[open] > :not(summary) {
     justify-content: center;
     width: 40px;
     height: 40px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.75);
+    min-width: 0; border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
     cursor: pointer;
-    transition: background 0.2s ease, transform 0.15s ease, color 0.2s ease;
     padding: 0;
     line-height: 0;
 }
@@ -2954,19 +2954,17 @@ details.iig-accordion[open] > :not(summary) {
 }
 
 .iig-lightbox-action-btn:hover {
-    background: rgba(255, 255, 255, 0.18);
-    color: #fff;
-    transform: scale(1.08);
+    background: color-mix(in srgb, var(--lb-accent) 14%, transparent);
+    border-color: var(--lb-edge);
 }
 
-.iig-lightbox-action-btn:active {
-    transform: scale(0.95);
+@media (pointer: coarse) {
+    .iig-lightbox-action-btn { width: 44px; height: 44px; }
 }
 
 .iig-lightbox-caption {
-    color: rgba(255, 255, 255, 0.7);
+    padding: 5px 10px; overflow-wrap: anywhere;
     font-size: 0.82em;
-    max-width: 600px;
     text-align: center;
     line-height: 1.4;
     overflow: hidden;
@@ -2975,10 +2973,11 @@ details.iig-accordion[open] > :not(summary) {
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
 }
+.iig-lightbox-caption:empty { display: none; }
 
 .iig-lightbox-action-btn:focus-visible {
-    outline: 2px solid #fff;
-    outline-offset: 2px;
+    outline: 2px solid var(--lb-accent);
+    outline-offset: -2px;
 }
 
 /* ==================== Header Status Dot ==================== */

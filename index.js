@@ -1468,6 +1468,7 @@ const IIG_MESSAGES_I18N = {
         stopping: 'Stopping...',
         timeout: 'Timeout...',
         fullSizePreview: 'Full-size preview',
+        zoomIn: 'Zoom in', zoomOut: 'Zoom out', fitImage: 'Fit image',
         close: 'Close',
         closeViewer: 'Close image viewer',
         generationEnabled: 'Generation enabled',
@@ -1594,6 +1595,7 @@ const IIG_MESSAGES_I18N = {
         stopping: 'Остановка...',
         timeout: 'Время ожидания истекло...',
         fullSizePreview: 'Полноразмерный просмотр',
+        zoomIn: 'Приблизить', zoomOut: 'Отдалить', fitImage: 'Вписать изображение',
         close: 'Закрыть',
         closeViewer: 'Закрыть просмотр изображения',
         generationEnabled: 'Генерация включена',
@@ -7378,7 +7380,7 @@ function wrapImageWithActions(imgElement, failedImage = false) {
         });
     }
 
-    if (!IS_MOBILE && !failedImage && !wrapper.querySelector('.iig-action-view')) {
+    if (!failedImage && !wrapper.querySelector('.iig-action-view')) {
         const viewButton = document.createElement('button');
         viewButton.type = 'button';
         viewButton.className = 'iig-action-btn iig-action-view';
@@ -7403,9 +7405,51 @@ function wrapImageWithActions(imgElement, failedImage = false) {
 let _lightboxPopup = null;
 let _lightboxInitialized = false;
 
+function bindLightboxZoom(content, signal) {
+    const stage = content.querySelector('.iig-lb-stage'), img = stage.firstElementChild;
+    const pointers = new Map();
+    const clamp = (v, max) => Math.max(-max, Math.min(max, v));
+    let scale = 1, x = 0, y = 0, rect;
+    function move(next, fromX, fromY, toX = fromX, toY = fromY) {
+        if (!img.naturalWidth || !rect.width || !rect.height) return;
+        next = Math.max(1, Math.min(5, next));
+        const fit = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight, 1);
+        const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+        x = clamp(toX - cx - (fromX - cx - x) * next / scale, Math.max(0, (img.naturalWidth * fit * next - rect.width) / 2));
+        y = clamp(toY - cy - (fromY - cy - y) * next / scale, Math.max(0, (img.naturalHeight * fit * next - rect.height) / 2));
+        scale = next;
+        img.style.transform = scale === 1 ? '' : `translate(${x}px, ${y}px) scale(${scale})`;
+        stage.classList.toggle('zoomed', scale > 1);
+    }
+    const centerZoom = factor => {
+        rect = stage.getBoundingClientRect();
+        move(scale * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    };
+    content.querySelectorAll('[data-zoom]').forEach(button => button.addEventListener('click', () => centerZoom(Number(button.dataset.zoom)), { signal }));
+    window.addEventListener('resize', () => { pointers.clear(); centerZoom(0); }, { signal });
+    stage.addEventListener('wheel', e => {
+        e.preventDefault(); rect = stage.getBoundingClientRect();
+        move(scale * Math.exp(-clamp(e.deltaY * (e.deltaMode ? 16 : 1), 120) / 420), e.clientX, e.clientY);
+    }, { passive: false, signal });
+    stage.addEventListener('pointerdown', e => {
+        if (e.button !== 0 || pointers.size >= 2) return;
+        rect = stage.getBoundingClientRect(); pointers.set(e.pointerId, e); stage.setPointerCapture(e.pointerId);
+    }, { signal });
+    stage.addEventListener('pointermove', e => {
+        const old = pointers.get(e.pointerId);
+        if (!old) return;
+        pointers.set(e.pointerId, e);
+        if (pointers.size === 1) { if (scale > 1) move(scale, old.clientX, old.clientY, e.clientX, e.clientY); return; }
+        const other = [...pointers.values()].find(p => p.pointerId !== e.pointerId);
+        const distance = p => Math.hypot(p.clientX - other.clientX, p.clientY - other.clientY);
+        move(scale * distance(e) / Math.max(1, distance(old)), (old.clientX + other.clientX) / 2, (old.clientY + other.clientY) / 2, (e.clientX + other.clientX) / 2, (e.clientY + other.clientY) / 2);
+    }, { signal });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) stage.addEventListener(type, e => pointers.delete(e.pointerId), { signal });
+}
+
 /** Open a host-owned modal viewer for this image. */
 async function openLightbox(imgElement, opener = document.activeElement) {
-    if (_iigDisposed || IS_MOBILE || _lightboxPopup) return;
+    if (_iigDisposed || _lightboxPopup) return;
     const safeSrc = safeMediaUrlOrNull(imgElement.src);
     if (!safeSrc) {
         iigLog('WARN', 'Refusing to open lightbox for an unsafe image URL');
@@ -7416,22 +7460,25 @@ async function openLightbox(imgElement, opener = document.activeElement) {
     const content = document.createElement('div');
     content.className = 'iig-lightbox-content';
     content.innerHTML = `
-        <img class="iig-lightbox-img" alt="${sanitizeForHtml(iigT('iig_fullSizePreview'))}">
+        <div class="iig-lb-stage"><img class="iig-lightbox-img" draggable="false" alt="${sanitizeForHtml(iigT('iig_fullSizePreview'))}"></div>
+        <div class="iig-lightbox-caption"></div>
         <div class="iig-lightbox-actions">
+            ${[['zoomOut', 'minus', 0.8], ['fitImage', 'down-left-and-up-right-to-center', 0], ['zoomIn', 'plus', 1.25]].map(([key, icon, factor]) => `<button type="button" class="iig-lightbox-action-btn" data-zoom="${factor}" title="${sanitizeForHtml(iigT('iig_' + key))}" aria-label="${sanitizeForHtml(iigT('iig_' + key))}"><i class="fa-solid fa-${icon}" aria-hidden="true"></i></button>`).join('')}
             <button type="button" class="iig-lightbox-action-btn iig-lb-download" title="${sanitizeForHtml(iigT('iig_download'))}" aria-label="${sanitizeForHtml(iigT('iig_downloadImage'))}">${SVG_ICON_DOWNLOAD}</button>
             <button type="button" class="iig-lightbox-action-btn iig-lb-regen" title="${sanitizeForHtml(iigT('iig_regenerate'))}" aria-label="${sanitizeForHtml(iigT('iig_regenerateImage'))}" ${imgElement.hasAttribute('data-iig-instruction') ? '' : 'hidden'}>${SVG_ICON_REGENERATE}</button>
             <button type="button" class="iig-lightbox-action-btn iig-lightbox-close" autofocus title="${sanitizeForHtml(iigT('iig_close'))}" aria-label="${sanitizeForHtml(iigT('iig_closeViewer'))}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
-        </div>
-        <div class="iig-lightbox-caption"></div>`;
+        </div>`;
     content.querySelector('.iig-lightbox-img').src = safeSrc;
     content.querySelector('.iig-lightbox-caption').textContent = imgElement.alt || '';
     const popup = new ctx.Popup(content, ctx.POPUP_TYPE.TEXT, '', {
-        transparent: true, large: true, okButton: false, cancelButton: false, animation: 'none',
+        large: true, okButton: false, cancelButton: false, animation: 'none',
     });
     popup.dlg.id = 'iig_lightbox';
     popup.dlg.classList.add('iig-lightbox');
     popup.dlg.setAttribute('aria-label', iigT('iig_fullSizePreview'));
     _lightboxPopup = popup;
+    const events = new AbortController();
+    bindLightboxZoom(content, events.signal);
     let regenerate = false;
     const close = () => {
         if (!popup.dlg.hasAttribute('closing')) return popup.complete(ctx.POPUP_RESULT.CANCELLED);
@@ -7452,6 +7499,7 @@ async function openLightbox(imgElement, opener = document.activeElement) {
         regenerate = false;
         iigLog('ERROR', 'Image viewer failed');
     } finally {
+        events.abort();
         if (_lightboxPopup === popup) _lightboxPopup = null;
         if (!_iigDisposed && opener?.isConnected && !opener.disabled && !opener.closest('[hidden], [inert]')) {
             opener.focus({ preventScroll: true });
