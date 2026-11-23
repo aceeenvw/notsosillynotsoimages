@@ -11823,7 +11823,8 @@ function bindSettingsEvents() {
         const direct = apiType === 'novelai';
         const byId = id => document.getElementById(id);
         byId('iig_novel_config').classList.toggle('iig-hidden', !direct);
-        byId('iig_library_shortcut_row').classList.toggle('iig-hidden', !direct);
+        byId('iig_library_shortcut_row').classList.toggle('iig-hidden', !direct || IS_MOBILE_OS);
+        byId('iig_library_shortcut_row').closest('details').classList.toggle('iig-hidden', direct && IS_MOBILE_OS);
         for (const id of ['iig_endpoint_row', 'iig_api_key_row']) byId(id).classList.toggle('iig-hidden', direct);
         byId('iig_path_override')?.closest('details')?.classList.toggle('iig-hidden', direct);
         const refs = byId('iig_refs_section');

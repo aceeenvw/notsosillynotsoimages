@@ -2660,10 +2660,19 @@ button.iig-regenerate-btn {
 .popup:has(.iig-prompt-library) {
     width: min(48rem, calc(100dvw - 1em));
     height: min(58rem, calc(100dvh - 1em));
+    min-height: 0;
     max-height: calc(100dvh - 1em);
     overflow: hidden;
 }
-.popup:has(.iig-prompt-library) .popup-body { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+/* Keep a definite content height above the host's Safari fit-content rule. */
+.popup:has(.iig-novel-library.iig-prompt-library) > .popup-body {
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+}
 .popup:has(.iig-prompt-library) .popup-content { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .popup:has(.iig-prompt-library) .popup-controls { flex: none; }
 .iig-prompt-library .iig-prompt-columns,
