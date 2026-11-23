@@ -2,16 +2,16 @@
  * notsosillynotsoimages — Inline Image Generation for SillyTavern
  * Character references, NPC slots, iOS compatibility layer.
  *
- * Copyright (C) 2025-2026 aceeenvw
+ * Fork modifications: Copyright (C) 2025-2026 aceenvw
  * Repository: https://github.com/aceeenvw/notsosillynotsoimages
  *
- * Based on SillyImages by 0xl0cal
- * Original: https://github.com/0xl0cal/sillyimages
+ * Based on SillyImages by 0xl0cal (local) and Astera
+ * Upstream: https://github.com/0xl0cal/sillyimages
+ * SPDX-License-Identifier: AGPL-3.0-only
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * the Free Software Foundation, version 3 of the License.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,10 +21,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  *
- * NOTICE: If you use or adapt any part of this code in your own project,
- * you must retain this copyright notice and provide attribution to the
- * original author (aceeenvw) in a prominent location (file header,
- * README, or UI credits).
+ * Retain the upstream and fork copyright, license, and credit notices.
  */
 
 import { chat_completion_sources, createGenerationParameters, getChatCompletionModel, promptManager } from '/scripts/openai.js';
@@ -801,6 +798,17 @@ const defaultSettings = Object.freeze({
     imageSize: '1K',                // Gemini: 1K/2K/4K
     // User toggle for providers or models that reject references.
     geminiSendRefs: true,
+    novelOpusOnly: true,
+    novelResolution: 'normal',
+    novelRatio: '1:1',
+    novelRotateRatio: false,
+    novelLibraryShortcut: '',
+    novelModel: 'nai-diffusion-4-5-full',
+    novelEndpoint: 'https://image.novelai.net/',
+    novelToken: '',
+    novelStyle: '',
+    novelNegativeId: '',
+    novelLibrary: [],
     // Naistera
     naisteraPreset: '',             // '' | 'digital' | 'realism' (Grok family)
     naisteraModel: 'grok',          // 'grok' | 'grok-pro' | 'nano banana 2' | 'novelai'
@@ -1018,6 +1026,7 @@ function shouldReplaceEndpointForApiType(apiType, endpoint) {
 
 function getEffectiveEndpoint(settings) {
     if (!settings) settings = getSettings();
+    if (settings.apiType === 'novelai') return (String(settings.novelEndpoint || '').trim() || defaultSettings.novelEndpoint).replace(/\/+$/, '');
     return normalizeConfiguredEndpoint(settings.apiType, settings.endpoint);
 }
 
@@ -1126,6 +1135,7 @@ const PRESET_FIELDS = Object.freeze([
 ]);
 
 function snapshotApiConfig(settings) {
+    if (settings.apiType === 'novelai') return { apiType: 'novelai', novelModel: settings.novelModel, novelEndpoint: settings.novelEndpoint, novelToken: settings.novelToken || '' };
     const snap = {};
     for (const f of PRESET_FIELDS) snap[f] = settings[f] ?? '';
     return snap;
@@ -1133,6 +1143,13 @@ function snapshotApiConfig(settings) {
 
 // Missing fields fall back to '' so a partially-populated preset still applies cleanly.
 function applyPresetToSettings(settings, preset) {
+    if (preset.apiType === 'novelai') {
+        settings.apiType = 'novelai';
+        settings.novelEndpoint = preset.novelEndpoint || defaultSettings.novelEndpoint;
+        settings.novelToken = preset.novelToken || '';
+        settings.novelModel = directNovelModel(preset.novelModel);
+        return;
+    }
     for (const f of PRESET_FIELDS) {
         settings[f] = preset[f] ?? '';
     }
@@ -1213,6 +1230,20 @@ function buildApiUrl(settings, defaultSuffix, modelForSuffix) {
     return `${base}${suffix}`;
 }
 
+function splitNovelNegatives(settings) {
+    if (Object.hasOwn(settings, 'novelNegativeId')) return;
+    settings.novelNegativeId = '';
+    for (const style of settings.novelLibrary || []) {
+        if (style.kind !== 'style' || !Object.hasOwn(style, 'negative')) continue;
+        if (style.negative?.trim()) {
+            const id = `negative:${style.id}`;
+            settings.novelLibrary.push({ kind: 'negative', id, name: style.name, text: style.negative });
+            if (settings.novelStyle === style.id) settings.novelNegativeId = id;
+        }
+        delete style.negative;
+    }
+}
+
 function getSettings() {
     const context = getContext() || SillyTavern.getContext();
 
@@ -1220,6 +1251,7 @@ function getSettings() {
         context.extensionSettings[MODULE_NAME] = structuredClone(defaultSettings);
     }
 
+    splitNovelNegatives(context.extensionSettings[MODULE_NAME]);
     for (const key of Object.keys(defaultSettings)) {
         if (!Object.hasOwn(context.extensionSettings[MODULE_NAME], key)) {
             context.extensionSettings[MODULE_NAME][key] = structuredClone(defaultSettings[key]);
@@ -1704,15 +1736,12 @@ const PROMPT_MODEL_I18N = {
         guidanceTitle: 'Prompt Model guidance',
         guidanceIntro: 'This direction is sent only to the separate prompt model. The main narrative model never sees it.',
         guidanceLabel: 'Persistent guidance for this chat',
-        guidancePlaceholder: 'Example: Focus on the doorway confrontation. Use a wide horizontal composition and keep Ace in frame.',
-        guidancePersistence: 'Stays active for this chat until you clear it.',
+        guidancePlaceholder: '<ooc>\n...\n</ooc>',
+        guidancePersistence: 'Depth 0 places guidance after the latest reply. Each step moves it one message earlier.',
+        guidanceDepth: 'Depth', guidanceEnabled: 'Enable OOC',
         guidanceSet: 'Active',
         guidanceEmpty: 'Not set',
         guidanceLocationHint: 'Use OOC for directions only the prompt model should see.',
-        guidanceApply: 'Apply guidance',
-        guidanceClear: 'Clear',
-        guidanceSaved: 'Image guidance saved for this chat.',
-        guidanceCleared: 'Image guidance cleared.',
         guidanceUnavailable: 'Enable Prompt Model to use image-only guidance.',
         selectedPromptMissing: 'Selected prompt no longer exists',
         modelStatusError: 'Model status returned {status}',
@@ -1809,15 +1838,12 @@ const PROMPT_MODEL_I18N = {
         guidanceTitle: 'Указания для модели промпта',
         guidanceIntro: 'Эти указания получает только отдельная модель промпта. Основная модель повествования их не видит.',
         guidanceLabel: 'Постоянные указания для этого чата',
-        guidancePlaceholder: 'Например: Сфокусируйся на конфликте у двери. Используй широкую горизонтальную композицию и оставь Эйс в кадре.',
-        guidancePersistence: 'Остаются активными в этом чате, пока вы их не очистите.',
+        guidancePlaceholder: '<ooc>\n...\n</ooc>',
+        guidancePersistence: 'Глубина 0 помещает указания после последнего ответа. Каждый шаг сдвигает их на одно сообщение раньше.',
+        guidanceDepth: 'Глубина', guidanceEnabled: 'Включить OOC',
         guidanceSet: 'Активны',
         guidanceEmpty: 'Не заданы',
         guidanceLocationHint: 'Используйте OOC для указаний только модели промпта.',
-        guidanceApply: 'Применить',
-        guidanceClear: 'Очистить',
-        guidanceSaved: 'Указания для изображения сохранены для этого чата.',
-        guidanceCleared: 'Указания для изображения очищены.',
         guidanceUnavailable: 'Включите модель промпта для отдельных указаний.',
         selectedPromptMissing: 'Выбранный промпт больше не существует',
         modelStatusError: 'Проверка моделей вернула код {status}',
@@ -2117,38 +2143,13 @@ function buildPromptModelGeminiUrl(config, compatible = false, base = normalizeP
     return `${base}${prefix}/v1beta/models/${encodeModelForPath(config.model)}:generateContent`;
 }
 
-function getPromptModelGuidance() {
-    try {
-        const ctx = getContext();
-        const chatId = ctx?.chatId ?? ctx?.getCurrentChatId?.();
-        if (chatId === undefined || chatId === null || chatId === '') return '';
-        return String(ctx.chatMetadata?.[PROMPT_MODEL_GUIDANCE_KEY] || '');
-    } catch (_) {
-        return '';
-    }
+function guidanceDepth(value) {
+    return Math.max(0, Math.min(9999, Math.trunc(Number(value)) || 0));
 }
 
-async function setPromptModelGuidance(value) {
-    if (_iigDisposed) return;
-    const ctx = getContext();
-    if (!ctx?.chatMetadata) return false;
-    const metadata = ctx.chatMetadata;
-    const previous = metadata[PROMPT_MODEL_GUIDANCE_KEY];
-    const guidance = String(value || '').trim();
-    if (guidance) metadata[PROMPT_MODEL_GUIDANCE_KEY] = guidance;
-    else delete metadata[PROMPT_MODEL_GUIDANCE_KEY];
-    try {
-        await ctx.saveMetadata?.();
-    } catch (error) {
-        if (metadata[PROMPT_MODEL_GUIDANCE_KEY] === (guidance || undefined)) {
-            if (previous === undefined) delete metadata[PROMPT_MODEL_GUIDANCE_KEY];
-            else metadata[PROMPT_MODEL_GUIDANCE_KEY] = previous;
-        }
-        refreshPromptModelGuidanceButton();
-        throw error;
-    }
-    refreshPromptModelGuidanceButton();
-    return true;
+function getPromptModelGuidance() {
+    const raw = getContext()?.chatMetadata?.[PROMPT_MODEL_GUIDANCE_KEY];
+    return { text: typeof raw === 'string' ? raw : raw?.text || '', enabled: raw?.enabled !== false, depth: guidanceDepth(raw?.depth) };
 }
 
 function isPromptModelAvailable() {
@@ -2319,7 +2320,8 @@ function refreshPromptModelGuidanceButton() {
     const ctx = getContext();
     const chatId = ctx?.chatId ?? ctx?.getCurrentChatId?.();
     const visible = isPromptModelAvailable() && pm.enabled && chatId !== undefined && chatId !== null && chatId !== '';
-    const guidance = getPromptModelGuidance();
+    const note = getPromptModelGuidance();
+    const guidance = note.enabled && note.text;
     button.classList.toggle('iig-pm-guidance-hidden', !visible);
     button.classList.toggle('active', visible && !!guidance);
     button.title = guidance ? pmT('guidanceActive') : pmT('guidanceButton');
@@ -2358,18 +2360,20 @@ async function openPromptModelGuidancePopup() {
     editorBlock.className = 'iig-pm-guidance-block';
     const blockHead = document.createElement('div');
     blockHead.className = 'iig-pm-guidance-block-head';
-    const blockLabel = document.createElement('span');
-    blockLabel.textContent = pmT('guidanceLabel');
-    const state = document.createElement('span');
+    const state = document.createElement('label');
     const currentGuidance = getPromptModelGuidance();
-    state.className = `iig-pm-guidance-state${currentGuidance ? ' active' : ''}`;
-    state.textContent = currentGuidance ? pmT('guidanceSet') : pmT('guidanceEmpty');
-    blockHead.append(blockLabel, state);
+    state.className = 'iig-ooc-switch';
+    const enabled = document.createElement('input');
+    enabled.type = 'checkbox';
+    enabled.setAttribute('role', 'switch');
+    enabled.checked = currentGuidance.enabled;
+    state.append(enabled, pmT('guidanceEnabled'));
+    blockHead.append(state);
     editorBlock.appendChild(blockHead);
 
     const textarea = document.createElement('textarea');
     textarea.className = 'text_pole iig-pm-guidance-textarea';
-    textarea.value = currentGuidance;
+    textarea.value = currentGuidance.text;
     textarea.placeholder = pmT('guidancePlaceholder');
     textarea.rows = 7;
     textarea.setAttribute('aria-label', pmT('guidanceLabel'));
@@ -2381,74 +2385,44 @@ async function openPromptModelGuidancePopup() {
     editorBlock.appendChild(persistence);
     root.appendChild(editorBlock);
 
-    const footer = document.createElement('div');
-    footer.className = 'iig-pm-guidance-footer';
-    const actions = document.createElement('div');
-    actions.className = 'iig-pm-guidance-actions';
-    const clearButton = document.createElement('button');
-    clearButton.type = 'button';
-    clearButton.className = 'menu_button iig-pm-guidance-clear';
-    clearButton.innerHTML = `<i class="fa-solid fa-eraser" aria-hidden="true"></i><span>${sanitizeForHtml(pmT('guidanceClear'))}</span>`;
-    const applyButton = document.createElement('button');
-    applyButton.type = 'button';
-    applyButton.className = 'menu_button iig-pm-guidance-apply';
-    applyButton.innerHTML = `<i class="fa-solid fa-check" aria-hidden="true"></i><span>${sanitizeForHtml(pmT('guidanceApply'))}</span>`;
-    actions.append(clearButton, applyButton);
-    footer.appendChild(actions);
-    root.appendChild(footer);
+    const depthLabel = document.createElement('label');
+    depthLabel.className = 'iig-ooc-depth';
+    const depth = document.createElement('input');
+    depth.type = 'number'; depth.min = '0'; depth.max = '9999'; depth.step = '1';
+    depth.className = 'text_pole'; depth.value = String(currentGuidance.depth);
+    depthLabel.append(pmT('guidanceDepth'), depth);
+    blockHead.prepend(depthLabel);
 
     const popup = new ctx.Popup(root, ctx.POPUP_TYPE.TEXT, '', {
         wide: true,
         allowVerticalScrolling: true,
-        okButton: pmT('cancel'),
+        okButton: false,
         cancelButton: false,
     });
     popup.dlg?.setAttribute('aria-labelledby', titleText.id);
 
-    const apply = async () => {
-        if (applyButton.disabled) return;
-        const guidance = textarea.value.trim();
-        applyButton.disabled = true;
-        clearButton.disabled = true;
-        try {
-            await setPromptModelGuidance(guidance);
-            if (_iigDisposed) return;
-            toastr[guidance ? 'success' : 'info'](guidance ? pmT('guidanceSaved') : pmT('guidanceCleared'), pmT('title'));
-            popup.complete(ctx.POPUP_RESULT.AFFIRMATIVE);
-        } finally {
-            applyButton.disabled = false;
-            clearButton.disabled = false;
-        }
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'menu_button iig-ooc-close';
+    close.title = iigT('iig_close');
+    close.setAttribute('aria-label', close.title);
+    close.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+    title.append(close);
+    bindIig(close, 'click', () => popup.complete(ctx.POPUP_RESULT.AFFIRMATIVE));
+
+    const save = () => {
+        const current = getContext();
+        if (_iigDisposed || !ctx.chatMetadata || current.chatMetadata !== ctx.chatMetadata) return;
+        current.chatMetadata[PROMPT_MODEL_GUIDANCE_KEY] = {
+            text: textarea.value.trim(), enabled: enabled.checked, depth: guidanceDepth(depth.value),
+        };
+        current.saveMetadataDebounced();
+        refreshPromptModelGuidanceButton();
     };
-    bindIig(applyButton, 'click', () => apply().catch(error => {
-        iigLog('ERROR', 'Saving Prompt Model guidance failed:', error.message);
-        toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
-    }));
-    bindIig(clearButton, 'click', async () => {
-        applyButton.disabled = true;
-        clearButton.disabled = true;
-        try {
-            await setPromptModelGuidance('');
-            if (_iigDisposed) return;
-            toastr.info(pmT('guidanceCleared'), pmT('title'));
-            popup.complete(ctx.POPUP_RESULT.AFFIRMATIVE);
-        } catch (error) {
-            iigLog('ERROR', 'Clearing Prompt Model guidance failed:', error.message);
-            toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
-        } finally {
-            applyButton.disabled = false;
-            clearButton.disabled = false;
-        }
-    });
-    bindIig(textarea, 'keydown', event => {
-        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-            event.preventDefault();
-            return apply().catch(error => {
-                iigLog('ERROR', 'Saving Prompt Model guidance failed:', error.message);
-                toastr.error(sanitizeForHtml(iigErrorText(error)), sanitizeForHtml(pmT('title')), { escapeHtml: false });
-            });
-        }
-    });
+    bindIig(enabled, 'change', save);
+    bindIig(textarea, 'input', save);
+    bindIig(depth, 'input', save);
+    bindIig(depth, 'change', () => { depth.value = String(guidanceDepth(depth.value)); });
     if (window.matchMedia?.('(pointer: fine)').matches) {
         setIigTimeout(() => {
             textarea.focus();
@@ -2962,9 +2936,8 @@ function buildPromptModelMessages(messageId, narrative, capture, corrective = ''
     } else {
         messages.push({ role: 'assistant', content: narrative });
     }
-    const capturedGuidance = capture && Object.hasOwn(capture, 'guidance')
-        ? capture.guidance
-        : getPromptModelGuidance();
+    const note = capture?.guidance ?? getPromptModelGuidance();
+    const capturedGuidance = note.enabled ? note.text : '';
     const { snapshot, guidance, history } = withPromptModelMacroScope(messageId, () => {
         const substitute = text => getContext()?.substituteParams?.(text) ?? text;
         const hasSceneLog = /{{\s*ace_last3\s*}}/i.test(`${pm.snapshot.content}\n${capturedGuidance || ''}`);
@@ -2980,10 +2953,18 @@ function buildPromptModelMessages(messageId, narrative, capture, corrective = ''
     const outputRule = [
         snapshot,
         history ? `[Recent illustration history]\n${history}` : '',
-        guidance ? `[Additional image direction from the user - apply this to the image block only]\n${guidance}` : '',
         '[Output only the image HTML using this structure for each requested image: <img data-iig-instruction=\'{"prompt":"detailed visual prompt"}\' src="[IMG:GEN]">. Follow the image count requested in the image instructions. Additional supported instruction fields and image wrappers may be included. If bookkeeping footers are requested, put exactly one matching footer immediately after each corresponding image wrapper. For a selected-image rewrite, return only the one requested image tag without footers. No narrative, markdown fences, or commentary.]',
         corrective,
     ].filter(Boolean).join('\n');
+    if (guidance) {
+        let index = messages.length, remaining = note.depth;
+        while (index > 0 && remaining > 0) {
+            index--;
+            if (['user', 'assistant'].includes(messages[index]?.role)) remaining--;
+        }
+        while (index < messages.length && ['system', 'developer'].includes(messages[index]?.role)) index++;
+        messages.splice(index, 0, { role: 'user', content: `[Additional image direction from the user - apply this to the image block only]\n${guidance}` });
+    }
     messages.push({ role: 'user', content: outputRule });
     return messages;
 }
@@ -3649,11 +3630,9 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
     invalidateContextCache();
     const context = getContext();
     const scope = buildProcessingKey(messageId);
-    const capture = getCachedPromptModelCapture(scope);
-    if (!capture?.chat) {
-        toastr.warning(pmT('contextUnavailable'), pmT('title'));
-        return false;
-    }
+    const capture = getCachedPromptModelCapture(scope) || {
+        type: 'normal', chat: buildPromptModelFallbackContext(messageId), guidance: getPromptModelGuidance(),
+    };
     if (context?.mainApi !== 'openai') {
         toastr.warning(pmT('notChatCompletion'), pmT('title'));
         return false;
@@ -3670,19 +3649,27 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
     const swipes = message.swipes;
     const original = { mes: message.mes, display: message.extra?.display_text,
         swipe: swipes?.[swipeId], swipeDisplay: swipeInfo?.extra?.display_text };
+    // The host can leave the pending image in the current swipe after saving its generated URL.
+    const pendingTag = tag.sourceKey === 'mes' && replaceSrcInTag(tag.fullMatch, '[IMG:GEN]');
+    const matchingSwipe = typeof original.swipe !== 'string' || original.swipe === original.mes || (pendingTag &&
+        original.swipe === source.slice(0, tag.sourceIndex) + pendingTag + source.slice(tag.sourceIndex + tag.fullMatch.length));
+    const provider = getSettings().apiType;
     let expected = original;
     const originalSrc = imgElement.getAttribute('src');
     const originalInstruction = imgElement.getAttribute('data-iig-instruction');
-    const renderedImages = Array.from(messageElement.querySelectorAll('.mes_text img[data-iig-instruction]'));
+    const targetMatches = image => image.getAttribute('src') === originalSrc
+        && image.getAttribute('data-iig-instruction') === originalInstruction;
+    const liveTarget = () => {
+        if (imgElement.isConnected && imgElement.closest('.mes[mesid]') === messageElement && targetMatches(imgElement)) return imgElement;
+        const matches = Array.from(document.querySelectorAll(`#chat .mes[mesid="${messageId}"] .mes_text img[data-iig-instruction]`)).filter(targetMatches);
+        return matches.length === 1 ? matches[0] : null;
+    };
     const { controller, key } = beginGeneration(messageId, tag);
     wrapper._iigRewriteController = controller;
     const tagId = `iig-rewrite-${messageId}-${++_singleImageGenerationSerial}`;
     tagAbortControllers.set(tagId, controller);
     let timeout = null;
     let placeholder = null;
-    let settingsSnapshot;
-    let completionSnapshot;
-    let guidance;
     let phase = 'prompt';
     const controls = Array.from(wrapper.querySelectorAll('.iig-action-regen, .iig-action-prompt-regen'))
         .map(button => ({ button, disabled: button.disabled }));
@@ -3697,21 +3684,14 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
     const assertCurrent = () => {
         const scoped = sameScope();
         const current = getContext();
-        const images = Array.from(messageElement.querySelectorAll('.mes_text img[data-iig-instruction]'));
+        const target = liveTarget();
         const valid = scoped && !_iigDisposed && !controller.signal.aborted
             && _inFlightGenerations.get(key) === controller && current?.mainApi === 'openai'
-            && getSettings().enabled && JSON.stringify(getSettings()) === settingsSnapshot
-            && JSON.stringify(current.chatCompletionSettings) === completionSnapshot
-            && getPromptModelGuidance() === guidance
+            && getSettings().enabled && getSettings().apiType === provider
             && message.mes === expected.mes && message.extra?.display_text === expected.display
             && swipes?.[swipeId] === expected.swipe && swipeInfo?.extra?.display_text === expected.swipeDisplay
-            && !_promptModelEditSessions.has(message) && !messageElement.querySelector('.mes_edit_textarea')
-            && imgElement.isConnected && imgElement.closest('.mes[mesid]') === messageElement
-            && messageElement.getAttribute('mesid') === String(messageId)
-            && imgElement.parentElement === wrapper && wrapper._iigRewriteController === controller
-            && imgElement.getAttribute('src') === originalSrc
-            && imgElement.getAttribute('data-iig-instruction') === originalInstruction
-            && images.length === renderedImages.length && images.every((img, index) => img === renderedImages[index]);
+            && !_promptModelEditSessions.has(message) && target && !target.closest('.mes')?.querySelector('.mes_edit_textarea')
+            && wrapper._iigRewriteController === controller;
         if (valid) return;
         const error = iigError('Prompt reroll context changed', 'iig_pm_rerollContextChanged');
         error.name = 'AbortError';
@@ -3726,9 +3706,6 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
             throw iigError('Prompt Model request failed', 'iig_pm_requestFailed');
         }
         const gemini = sidecar && pm.connection === 'gemini' ? resolvePromptModelGeminiConfig() : null;
-        settingsSnapshot = JSON.stringify(getSettings());
-        completionSnapshot = JSON.stringify(context.chatCompletionSettings);
-        guidance = getPromptModelGuidance();
         const requestSettings = structuredClone(context.chatCompletionSettings);
         requestSettings.stream_openai = false;
         requestSettings.n = 1;
@@ -3737,7 +3714,9 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
         const model = gemini?.model || (sidecar ? pm.model : getChatCompletionModel(requestSettings));
         if (!model) throw iigError('No current Chat Completion model is selected', 'iig_pm_mainModelMissing');
         assertCurrent();
-        if (getMessageTagSource(message, tag.sourceKey) !== source
+        if ((tag.sourceKey === 'mes' && !matchingSwipe)
+            || (tag.sourceKey === 'display_text' && original.swipeDisplay !== undefined && original.swipeDisplay !== original.display)
+            || getMessageTagSource(message, tag.sourceKey) !== source
             || source.slice(tag.sourceIndex, tag.sourceIndex + tag.fullMatch.length) !== tag.fullMatch) {
             throw iigError('Selected image source changed before replacement', 'iig_pm_imageSourceChanged');
         }
@@ -3818,7 +3797,6 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
                 const mes = splice(source, tag.sourceIndex);
                 write(message, 'mes', mes, () => true);
                 if (Array.isArray(swipes) && typeof original.swipe === 'string') {
-                    if (original.swipe !== original.mes) throw iigError('Selected image source changed before replacement', 'iig_pm_imageSourceChanged');
                     write(swipes, swipeId, mes, () => message.swipes === swipes);
                 }
                 if (typeof display === 'string') {
@@ -3867,7 +3845,9 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
                 throw iigError('Chat save failed', 'iig_chatSaveFailed');
             }
         });
-        assertCurrent();
+        if (_iigDisposed || !sameScope()) return true;
+        const renderedTarget = liveTarget();
+        if (!renderedTarget) return true; // The host may already have rendered the saved replacement.
         const newImg = document.createElement('img');
         newImg.className = 'iig-generated-image';
         newImg.src = imagePath;
@@ -3876,7 +3856,7 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
         newImg.setAttribute('data-iig-instruction', JSON.stringify(data));
         const focusReplacement = placeholder.contains(document.activeElement);
         const newWrapper = wrapImageWithActions(newImg);
-        wrapper.replaceWith(newWrapper);
+        (renderedTarget.closest('.iig-image-wrapper') || renderedTarget).replaceWith(newWrapper);
         if (focusReplacement) newWrapper.querySelector('.iig-action-prompt-regen')?.focus({ preventScroll: true });
         sessionGenCount++;
         updateSessionStats();
@@ -3888,6 +3868,8 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
         if ((error?.name === 'AbortError' || controller.signal.aborted) && controller.signal.reason !== 'timeout') {
             if (controller.signal.reason === 'user-cancel') {
                 toastr.info(pmT('stopped'), pmT('title'), { timeOut: 2000 });
+            } else if (controller.signal.reason === 'context-changed') {
+                toastr.info(pmT('imageSourceChanged'), pmT('title'));
             }
             return false;
         }
@@ -4643,7 +4625,7 @@ function getActiveRefScope({ forWrite = false } = {}) {
 
 function setRefMutationControlsDisabled(disabled) {
     if (_iigDisposed) return;
-    document.querySelectorAll('.iig-ref-file-input, .iig-ref-delete-btn, .iig-ref-packs-btn, .iig-ref-name, #iig_ref_scope, #iig_refs_reset_scope, #iig_refs_save_pack')
+    document.querySelectorAll('.iig-ref-file-input, .iig-ref-delete-btn, .iig-ref-packs-btn, .iig-ref-name, #iig_ref_scope, #iig_refs_reset_scope, #iig_refs_save_pack, #iig_refs_current_names')
         .forEach(element => { element.disabled = !!disabled; });
 }
 
@@ -4776,8 +4758,7 @@ function refMatchesPrompt(ref, promptText, fallbackName) {
  */
 async function fetchModels(settings = { ...getSettings() }) {
 
-    if (settings.apiType === 'naistera') {
-        iigLog('INFO', 'fetchModels skipped for Naistera (uses dropdown)');
+    if (settings.apiType === 'novelai' || settings.apiType === 'naistera') {
         return [];
     }
 
@@ -5622,7 +5603,7 @@ function base64ToImageBlob(src) {
 async function generateImageOpenAI(prompt, style, referenceImages = [], options = {}, settings = { ...getSettings() }) {
     const novelAiModel = isRoutMyNovelAiModel(settings.model);
     if (novelAiModel && referenceImages.length > 1) {
-        throw new Error('NovelAI accepts exactly one reference image; adjust reference name matching or Always send settings');
+        throw new Error('This image-to-image route accepts at most one matched photo');
     }
     const novelAiImg2Img = novelAiModel && referenceImages.length === 1;
     const requestModel = novelAiModel
@@ -6316,11 +6297,123 @@ function maybeSuggestFix(error) {
 }
 
 /** Validate settings before generation; throws with aggregated error list. */
+let novelBusy = false;
+const NOVEL_MODELS = Object.freeze({
+    'nai-diffusion-5-full': 'V5 Full', 'nai-diffusion-5-full-medium': 'V5 Full Medium',
+    'nai-diffusion-5-curated': 'V5 Curated', 'nai-diffusion-4-5-full': 'V4.5 Full', 'nai-diffusion-4-5-curated': 'V4.5 Curated',
+});
+const NOVEL_MEDIUM = 'nai-diffusion-5-full-medium';
+const NOVEL_MEDIUM_UC = 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page';
+function directNovelModel(id) { return Object.hasOwn(NOVEL_MODELS, id) ? id : defaultSettings.novelModel; }
+const NOVEL_SIZES = Object.freeze({
+    '1:1': [1024, 1024],
+    '2:3': [768, 1152], '3:2': [1152, 768],
+    '3:4': [768, 1024], '4:3': [1024, 768],
+    '4:5': [768, 960], '5:4': [960, 768],
+    '13:19': [832, 1216], '19:13': [1216, 832],
+    '9:16': [576, 1024], '16:9': [1024, 576],
+    '9:21': [576, 1344], '21:9': [1344, 576],
+});
+const novelRatios = Object.keys(NOVEL_SIZES);
+const NOVEL_LARGE_SIZES = Object.freeze({
+    '1:1': [1472, 1472],
+    '2:3': [1024, 1536], '3:2': [1536, 1024],
+    '3:4': [1152, 1536], '4:3': [1536, 1152],
+    '4:5': [1280, 1600], '5:4': [1600, 1280],
+    '13:19': [1152, 1664], '19:13': [1664, 1152],
+    '9:16': [1152, 2048], '16:9': [2048, 1152],
+    '9:21': [960, 2240], '21:9': [2240, 960],
+});
+function novelResolution(settings) {
+    return settings.novelOpusOnly === false && settings.novelResolution === 'large' ? 'large' : 'normal';
+}
+let novelRatioIndex = 0;
+let novelRatioRevision = 0;
+
+function effectiveNovelRatio(settings) {
+    if (settings.novelRotateRatio) return novelRatios[novelRatioIndex];
+    return Object.hasOwn(NOVEL_SIZES, settings.novelRatio) ? settings.novelRatio : '1:1';
+}
+
+async function novelRequest(endpoint, path, token, signal, body) {
+    if (!/^https?:\/\//i.test(endpoint) || validateEndpointShape(endpoint)) throw new Error(iigT('iig_endpointBaseOnly'));
+    const response = await robustFetch(`${endpoint}/${path}`, {
+        method: body ? 'POST' : 'GET', signal, credentials: 'omit', redirect: 'error',
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', ...(body && { 'Content-Type': 'application/json' }) },
+        ...(body && { body: JSON.stringify(body) }),
+    }, body ? FETCH_TIMEOUT : 20000);
+    if (!response.ok) {
+        response.iigDiscard?.();
+        throw new Error(`NovelAI: HTTP ${response.status}`);
+    }
+    return response.json();
+}
+
+async function generateDirectNovel(prompt, style, options, settings) {
+    if (novelBusy) throw new Error(iigT('iig_ui_novelBusy'));
+    novelBusy = true;
+    try {
+        const token = settings.novelToken;
+        const endpoint = getEffectiveEndpoint(settings);
+        const refs = getActiveRefs();
+        const people = [refs.charRef, refs.userRef, ...refs.npcReferences.slice(0, 4)];
+        const descriptions = people.filter((ref, i) => ref?.novelDescription?.trim() && (
+            (i === 0 && settings.charRefAlways) || (i === 1 && settings.userRefAlways) ||
+            refMatchesPrompt(ref, prompt, i === 0 ? getStCharName() : i === 1 ? getStUserName() : '')
+        )).map(ref => ref.novelDescription.trim().slice(0, 2000));
+        const activeStyle = settings.novelLibrary?.find(item => item.kind === 'style' && item.id === settings.novelStyle);
+        const scene = [activeStyle?.text, style, prompt].filter(Boolean).join(', ');
+        const model = directNovelModel(settings.novelModel);
+        const medium = model === NOVEL_MEDIUM, v5 = model.startsWith('nai-diffusion-5-');
+        const negative = medium ? NOVEL_MEDIUM_UC : settings.novelLibrary?.find(item => item.kind === 'negative' && item.id === settings.novelNegativeId)?.text || '';
+        const revision = novelRatioRevision;
+        const sizes = novelResolution(settings) === 'large' ? NOVEL_LARGE_SIZES : NOVEL_SIZES;
+        const [width,height] = sizes[effectiveNovelRatio(settings)];
+        if (settings.novelOpusOnly !== false) {
+            const account = await novelRequest(endpoint, 'user/subscription', token, options.signal);
+            if (account?.active !== true || account.tier !== 3 || account.perks?.unlimitedImageGeneration === false) throw new Error(iigT('iig_ui_novelBlocked'));
+            if (v5) {
+                const usage = account.usage;
+                const remaining = (n, cap) => Number.isFinite(n) && n > 0 && n <= cap;
+                if (!Number.isFinite(account.expiresAt) || account.expiresAt * 1000 <= Date.now() ||
+                    !(usage?.isNegative === false && remaining(usage.percent, 100) || remaining(usage?.purchasedPercent, 400))) {
+                    throw new Error(iigT('iig_ui_novelUsageBlocked'));
+                }
+            }
+        }
+        throwIfSignalAborted(options.signal);
+        const captions = texts => texts.map(char_caption => ({ char_caption, centers: [{ x: 0.5, y: 0.5 }] }));
+        const data = await novelRequest(endpoint, 'ai/generate-image', token, options.signal, {
+            action: 'generate', input: scene,
+            model,
+            parameters: { params_version: 3, width, height, n_samples: 1, steps: medium ? 14 : 23, scale: 5,
+                seed: crypto.getRandomValues(new Uint32Array(1))[0], sampler: 'k_euler_ancestral',
+                ...(v5 ? { ucPreset: medium ? 0 : 3, qualityToggle: false } : { noise_schedule: 'karras' }),
+                negative_prompt: negative, use_coords: false,
+                v4_prompt: { caption: { base_caption: scene, char_captions: captions(descriptions) }, use_coords: false, use_order: true },
+                v4_negative_prompt: { caption: { base_caption: negative, char_captions: captions(descriptions.map(() => '')) } },
+            },
+        });
+        const image = data?.images?.[0]?.image;
+        if (typeof image !== 'string' || !image.startsWith('iVBORw0KGgo')) throw new Error(iigT('iig_ui_novelNoImage'));
+        throwIfSignalAborted(options.signal);
+        if (settings.novelRotateRatio && revision === novelRatioRevision) {
+            novelRatioIndex = (novelRatioIndex + 1) % novelRatios.length;
+            const picker = document.getElementById('iig_novel_ratio');
+            if (picker) picker.value = novelRatios[novelRatioIndex];
+        }
+        return `data:image/png;base64,${image}`;
+    } finally { novelBusy = false; }
+}
+
 function validateSettings() {
     const settings = getSettings();
     const errors = [];
 
     switch (settings.apiType) {
+        case 'novelai':
+            if (!settings.novelToken) errors.push(iigError('NovelAI token missing', 'iig_apiKeyMissing'));
+            break;
         case 'openai':
         case 'gemini': {
             // Validate the NORMALIZED endpoint — that is the value that
@@ -6609,7 +6702,7 @@ async function resolveRenderedImageSource(imgElement) {
             && message.swipe_info?.[getMessageSwipeId(message)] === swipe
             && getMessageTagSource(message, 'mes') === narrativeSource
             && getMessageTagSource(message, 'display_text') === displaySource
-            && images.length === rendered.length && images.every((image, index) => image === rendered[index]);
+            && images.length === rendered.length && images[renderedIndex] === imgElement;
     };
     const tags = (await parseMessageImageTags(message, { forceAll: true }))
         .filter(tag => tag.mediaType === 'image' && tag.isNewFormat);
@@ -6953,6 +7046,11 @@ async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {
             iigLog('INFO', `Prompt-driven=off: ignoring tag overrides (${stripped.join(', ')})`);
             for (const k of stripped) delete options[k];
         }
+    }
+
+    if (settings.apiType === 'novelai') {
+        onStatusUpdate?.(iigT('iig_generating'));
+        return generateDirectNovel(prompt, style, options, settings);
     }
 
     // Ref gating by apiType: naistera = model + toggle; gemini = toggle; openai = always.
@@ -8264,8 +8362,6 @@ function updateRefScopeUI() {
         else label.textContent = iigT('iig_ui_chatInheritsGlobal');
     }
 
-    const resetRow = document.getElementById('iig_ref_scope_reset_row');
-    if (resetRow) resetRow.classList.toggle('iig-hidden', scope === 'global');
     const savePack = document.getElementById('iig_refs_save_pack');
     if (savePack) {
         savePack.classList.toggle('iig-hidden', scope !== 'per-character');
@@ -8277,6 +8373,7 @@ function updateRefScopeUI() {
     }
     const reset = document.getElementById('iig_refs_reset_scope');
     if (reset) {
+        reset.classList.toggle('iig-hidden', scope === 'global');
         const hasOwn = scope === 'per-character'
             ? state.storageScope === 'per-character'
             : scope === 'per-chat' && state.storageScope === 'per-chat';
@@ -8301,6 +8398,9 @@ function renderRefSlots() {
     const settings = getActiveRefs();
 
     const setThumb = (slot, ref) => {
+        const description = slot?.querySelector('.iig-novel-description');
+        if (description) description.value = ref?.novelDescription || '';
+        if (getSettings().apiType === 'novelai') return;
         clearPackedRefSlotAppearance(slot);
         const thumb = slot?.querySelector('.iig-ref-thumb');
         const wrap = slot?.querySelector('.iig-ref-thumb-wrap');
@@ -8355,7 +8455,6 @@ const IIG_UI_I18N = {
         openaiCompatible: 'OpenAI-compatible',
         geminiCompatible: 'Gemini-compatible',
         apiOpenaiHint: 'Uses /v1/images/generations, /v1/images/edits, and /v1/models for providers that speak the OpenAI REST schema.',
-        apiGeminiHint: 'Appends /v1beta/models/{model}:generateContent and /v1beta/models. Use this for providers that speak the Google Gemini REST schema (including most Gemini proxies).',
         apiNaisteraHint: 'Appends /api/generate. If the URL is blank, defaults to naistera.org.',
         endpoint: 'Endpoint URL',
         endpointPlaceholder: 'https://your-provider.example (base URL only)',
@@ -8377,10 +8476,22 @@ const IIG_UI_I18N = {
         cropOnUpload: 'Crop uploads (references and packs)',
         referenceOptions: 'Reference Options',
         referenceOptionsSubtitle: 'Matching, scope and send rules',
-        referenceHint: 'Up to 4 matching references are sent; NovelAI accepts exactly one. Names support comma-separated aliases.',
+        referenceHint: 'Names support comma-separated aliases. Photo limits depend on the provider.',
+        novelActiveStyle: 'Active style', novelToken: 'NovelAI token',
+        novelStyleText: 'Style', novelNegative: 'Negative prompt', novelNegativeOff: 'No active negative', novelPromptLibrary: 'Prompt Library',
+        novelSearch: 'Search by name', novelEdit: 'Edit entry', novelEmpty: 'No entries yet', novelNoMatch: 'No matching entries', novelDeactivate: 'Deactivate', novelActive: 'Active', novelCancel: 'Cancel',
+        novelMediumHint: 'Medium uses a fixed negative prompt. Your library selection stays saved.', novelUsageBlocked: 'V5 Opus allowance is empty or could not be verified. No image requested.',
+        novelRatio: 'Aspect ratio',
+        libraryShortcut: 'Prompt Library shortcut', shortcutRecord: 'Record shortcut', shortcutPress: 'Press Ctrl, Alt or Cmd + a key', shortcutClear: 'Clear shortcut',
+        novelResolution: 'Resolution', novelNormal: 'Normal', novelLarge: 'Large (uses Anlas)',
+        novelRotateRatio: 'Rotate aspect ratio',
+        novelProtect: 'Require free Opus eligibility', novelPeople: 'Character Descriptions', novelAppearance: 'Appearance',
+        novelLibrary: 'Description library', novelStyles: 'Style library', novelNew: 'New entry', novelApply: 'Use entry', novelSave: 'Save entry', novelDelete: 'Delete entry', novelName: 'Entry name', novelText: 'Text', novelOff: 'No active style',
+        novelBusy: 'A NovelAI image is already generating. Try again when it finishes.', novelBlocked: 'Free Opus eligibility could not be verified. No image requested.', novelNoImage: 'NovelAI returned no PNG image.',
         alwaysChar: 'Always send Char',
         alwaysUser: 'Always send User',
         referenceSet: 'Reference set',
+        currentNames: 'Use current names',
         global: 'Global',
         perCharacter: 'Per-character',
         perChat: 'Per-chat',
@@ -8531,7 +8642,6 @@ const IIG_UI_I18N = {
         openaiCompatible: 'Совместимый с OpenAI',
         geminiCompatible: 'Совместимый с Gemini',
         apiOpenaiHint: 'Использует /v1/images/generations, /v1/images/edits и /v1/models для провайдеров, поддерживающих схему OpenAI REST.',
-        apiGeminiHint: 'Добавляет /v1beta/models/{model}:generateContent и /v1beta/models. Для провайдеров, поддерживающих схему Google Gemini REST (включая большинство прокси Gemini).',
         apiNaisteraHint: 'Добавляет /api/generate. Если URL пуст, используется naistera.org.',
         endpoint: 'URL API',
         endpointPlaceholder: 'https://your-provider.example (только базовый URL)',
@@ -8553,10 +8663,22 @@ const IIG_UI_I18N = {
         cropOnUpload: 'Обрезать загрузки (референсы и наборы)',
         referenceOptions: 'Параметры референсов',
         referenceOptionsSubtitle: 'Сопоставление, область действия и правила отправки',
-        referenceHint: 'Отправляется до 4 подходящих референсов; NovelAI принимает ровно один. Для имён можно указать псевдонимы через запятую.',
+        referenceHint: 'Псевдонимы указываются через запятую. Лимит фото зависит от провайдера.',
+        novelActiveStyle: 'Активный стиль', novelToken: 'Токен NovelAI',
+        novelStyleText: 'Стиль', novelNegative: 'Негативный промпт', novelNegativeOff: 'Без негативного промпта', novelPromptLibrary: 'Библиотека промптов',
+        novelSearch: 'Поиск по названию', novelEdit: 'Редактировать запись', novelEmpty: 'Пока нет записей', novelNoMatch: 'Ничего не найдено', novelDeactivate: 'Отключить', novelActive: 'Активно', novelCancel: 'Отмена',
+        novelMediumHint: 'В режиме Medium негативный промпт фиксирован. Ваш выбор в библиотеке сохранён.', novelUsageBlocked: 'Лимит Opus для V5 исчерпан или не подтверждён. Запрос изображения не отправлен.',
+        novelRatio: 'Соотношение сторон',
+        libraryShortcut: 'Сочетание клавиш для библиотеки промптов', shortcutRecord: 'Записать сочетание', shortcutPress: 'Нажмите Ctrl, Alt или Cmd + клавишу', shortcutClear: 'Сбросить сочетание',
+        novelResolution: 'Разрешение', novelNormal: 'Обычное', novelLarge: 'Большое (расходует Anlas)',
+        novelRotateRatio: 'Чередовать соотношения сторон',
+        novelProtect: 'Только бесплатные генерации Opus', novelPeople: 'Описания персонажей', novelAppearance: 'Внешность',
+        novelLibrary: 'Библиотека описаний', novelStyles: 'Библиотека стилей', novelNew: 'Новая запись', novelApply: 'Применить', novelSave: 'Сохранить запись', novelDelete: 'Удалить запись', novelName: 'Название', novelText: 'Текст', novelOff: 'Без стиля',
+        novelBusy: 'Дождитесь завершения генерации NovelAI.', novelBlocked: 'Бесплатная генерация Opus не подтверждена. Запрос изображения не отправлен.', novelNoImage: 'NovelAI не вернул изображение PNG.',
         alwaysChar: 'Всегда отправлять персонажа',
         alwaysUser: 'Всегда отправлять пользователя',
         referenceSet: 'Набор референсов',
+        currentNames: 'Подставить имена',
         global: 'Глобальный',
         perCharacter: 'Для персонажа',
         perChat: 'Для чата',
@@ -8768,12 +8890,13 @@ function createSettingsUI() {
                                 <option value="openai" data-i18n="iig_ui_openaiCompatible" ${settings.apiType === 'openai' ? 'selected' : ''}>OpenAI-compatible</option>
                                 <option value="gemini" data-i18n="iig_ui_geminiCompatible" ${settings.apiType === 'gemini' ? 'selected' : ''}>Gemini-compatible</option>
                                 <option value="naistera" ${settings.apiType === 'naistera' ? 'selected' : ''}>Naistera</option>
+                                <option value="novelai" ${settings.apiType === 'novelai' ? 'selected' : ''}>NovelAI</option>
                             </select>
                         </div>
 
-                        <details class="iig-api-help">
+                        <details class="iig-api-help ${['novelai','gemini'].includes(settings.apiType) ? 'iig-hidden' : ''}">
                             <summary data-i18n="iig_ui_apiTypeInfo">API type info</summary>
-                            <p id="iig_api_type_info" class="hint">${sanitizeForHtml(iigT({ openai: 'iig_ui_apiOpenaiHint', gemini: 'iig_ui_apiGeminiHint', naistera: 'iig_ui_apiNaisteraHint' }[settings.apiType] || 'iig_ui_apiOpenaiHint'))}</p>
+                            <p id="iig_api_type_info" class="hint"></p>
                         </details>
 
                         <div class="flex-row iig-api-row" id="iig_endpoint_row">
@@ -8781,6 +8904,17 @@ function createSettingsUI() {
                             <input type="text" id="iig_endpoint" class="text_pole flex1"
                                    value="${sanitizeForHtml(settings.endpoint)}"
                                    placeholder="${settings.apiType === 'naistera' ? 'https://naistera.org' : escapeAttr(iigT('iig_ui_endpointPlaceholder'))}">
+                        </div>
+                        <div id="iig_novel_config" class="iig-novel-fields iig-hidden">
+                            <label><span data-i18n="iig_ui_endpoint">Endpoint URL</span><input class="text_pole" type="url" id="iig_novel_endpoint" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+                            <label><span data-i18n="iig_ui_novelToken">NovelAI token</span><input class="text_pole" type="password" autocomplete="off" id="iig_novel_token"></label>
+                            <label><span data-i18n="iig_ui_model">Model</span><select id="iig_novel_model">${Object.entries(NOVEL_MODELS).map(([id,label]) => `<option value="${id}">${label}</option>`).join('')}</select></label>
+                            <p class="hint iig-hidden" id="iig_novel_medium_hint" data-i18n="iig_ui_novelMediumHint">Medium uses a fixed negative prompt. Your library selection stays saved.</p>
+                            <label><span data-i18n="iig_ui_novelResolution">Resolution</span><select id="iig_novel_resolution"><option value="normal" data-i18n="iig_ui_novelNormal">Normal</option><option value="large" data-i18n="iig_ui_novelLarge">Large (uses Anlas)</option></select></label>
+                            <label><span data-i18n="iig_ui_novelRatio">Aspect ratio</span><select id="iig_novel_ratio">${Object.keys(NOVEL_SIZES).map(r => `<option>${r}</option>`).join('')}</select></label>
+                            <label class="checkbox_label"><input type="checkbox" id="iig_novel_rotate_ratio"><span data-i18n="iig_ui_novelRotateRatio">Rotate aspect ratio</span></label>
+                            <label class="checkbox_label"><input type="checkbox" id="iig_novel_protect"><span data-i18n="iig_ui_novelProtect">Require free Opus eligibility</span></label>
+                            <button type="button" id="iig_novel_styles" class="menu_button iig-novel-pill"><i class="fa-solid fa-palette" aria-hidden="true"></i><span data-i18n="iig_ui_novelPromptLibrary">Prompt Library</span></button>
                         </div>
                         <div class="flex-row iig-api-row" id="iig_api_key_row">
                             <label for="iig_api_key" data-i18n="iig_ui_apiKey">API Key</label>
@@ -8850,7 +8984,7 @@ function createSettingsUI() {
                                 <span class="iig-ref-options-subtitle" data-i18n="iig_ui_referenceOptionsSubtitle">Matching, scope and send rules</span>
                             </summary>
                             <div class="iig-ref-options-body">
-                                <p class="hint" data-i18n="iig_ui_referenceHint">Up to 4 matching references are sent; NovelAI accepts exactly one. Names support comma-separated aliases.</p>
+                                <p class="hint" data-i18n="iig_ui_referenceHint">Names support comma-separated aliases. Photo limits depend on the provider.</p>
 
                                 <div class="iig-ref-controls">
                                     <div class="iig-ref-always-grid">
@@ -8878,9 +9012,12 @@ function createSettingsUI() {
                                     </label>
                                     <div>
                                         <p id="iig_ref_scope_label" class="hint"></p>
-                                        <div id="iig_ref_scope_reset_row" class="iig-maintenance-row">
+                                        <div class="iig-ref-scope-actions">
                                             <button type="button" id="iig_refs_save_pack" class="menu_button iig-maint-btn iig-hidden">
                                                 <i class="fa-solid fa-box-archive" aria-hidden="true"></i> <span data-i18n="iig_pack_saveRefs">Save as Pack</span>
+                                            </button>
+                                            <button type="button" id="iig_refs_current_names" class="menu_button iig-maint-btn">
+                                                <i class="fa-solid fa-id-card" aria-hidden="true"></i> <span data-i18n="iig_ui_currentNames">Use current names</span>
                                             </button>
                                             <button type="button" id="iig_refs_reset_scope" class="menu_button iig-maint-btn">
                                                 <i class="fa-solid fa-rotate-left"></i> <span data-i18n="iig_ui_resetScope">Reset scope</span>
@@ -9050,6 +9187,13 @@ function createSettingsUI() {
                         <summary><h4><i class="fa-solid fa-sliders"></i> <span data-i18n="iig_ui_generationSettings">Generation Settings</span></h4></summary>
 
                         <!-- OpenAI params -->
+                        <div id="iig_library_shortcut_row" class="iig-novel-fields iig-hidden" role="group" aria-labelledby="iig_library_shortcut_title">
+                            <span id="iig_library_shortcut_title" data-i18n="iig_ui_libraryShortcut">Prompt Library shortcut</span>
+                            <div class="iig-maintenance-row">
+                                <button type="button" id="iig_library_shortcut" class="menu_button iig-maint-btn" aria-pressed="false"><i class="fa-solid fa-keyboard" aria-hidden="true"></i><span></span></button>
+                                <button type="button" id="iig_library_shortcut_clear" class="menu_button iig-maint-btn"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span data-i18n="iig_ui_shortcutClear">Clear shortcut</span></button>
+                            </div>
+                        </div>
                         <div class="flex-row ${settings.apiType !== 'openai' ? 'iig-hidden' : ''}" id="iig_size_row">
                             <label for="iig_size" data-i18n="iig_ui_size">Size</label>
                             <select id="iig_size" class="flex1">
@@ -11275,6 +11419,144 @@ async function uploadRefFileToSlot(slot, refType, npcIndex, file, { crop = false
 }
 
 /** Wire name/upload/delete handlers for all 6 ref slots (char, user, 4 NPCs). */
+function fillCurrentRefNames() {
+    if (_iigDisposed || _refFolderClearInProgress) return;
+    const ctx = getContext();
+    const char = ctx.groupId ? '' : ctx.characters?.[ctx.characterId]?.name;
+    for (const [type, raw] of [['char', char], ['user', ctx.name1]]) {
+        const name = raw?.trim();
+        if (!name) continue;
+        const input = document.querySelector(`.iig-ref-slot[data-ref-type="${type}"] .iig-ref-name`);
+        if (!input || input.disabled || input.value === name) continue;
+        input.value = name;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('blur'));
+    }
+}
+
+function libraryShortcutChord(event) {
+    if (event.repeat || event.isComposing || event.getModifierState?.('AltGraph') || !(event.ctrlKey || event.altKey || event.metaKey)) return '';
+    if (!event.code || /^(Control|Shift|Alt|Meta)(Left|Right)$/.test(event.code)) return '';
+    return [event.ctrlKey && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift', event.metaKey && 'Meta', event.code.replace(/^(Key|Digit)(?=.$)/, '')].filter(Boolean).join(' + ');
+}
+
+async function openNovelLibrary(field = null, slotName = null) {
+    if (document.querySelector('.iig-novel-library')) return;
+    const s = getSettings(), ctx = getContext(), scope = getActiveRefScope();
+    const library = document.createElement('div');
+    library.className = 'iig-packs-popup iig-novel-library iig-prompt-library';
+    const t = key => sanitizeForHtml(iigT('iig_ui_' + key));
+    library.innerHTML = `<h3 class="iig-packs-heading"><i class="fa-solid fa-${field ? 'book-open' : 'palette'}" aria-hidden="true"></i> ${t(field ? 'novelLibrary' : 'novelPromptLibrary')}</h3><div class="iig-prompt-columns"></div>`;
+    const pages = library.lastElementChild;
+    const switcher = packNode('div', 'iig-entry-switch');
+    if (!field) library.insertBefore(switcher, pages);
+    for (const kind of field ? ['description'] : ['style', 'negative']) {
+        const page = makeEditor(kind);
+        pages.append(page);
+        if (field) continue;
+        page.hidden = kind === 'negative';
+        const tab = packIconButton('', kind === 'style' ? 'fa-palette' : 'fa-ban', iigT('iig_ui_' + (kind === 'style' ? 'novelStyleText' : 'novelNegative')));
+        switcher.append(tab);
+        tab.setAttribute('aria-pressed', String(!page.hidden));
+        tab.onclick = () => {
+            for (const sibling of pages.children) sibling.hidden = sibling !== page;
+            for (const button of switcher.children) button.setAttribute('aria-pressed', String(button === tab));
+        };
+    }
+    const popup = new ctx.Popup(library, ctx.POPUP_TYPE.TEXT, '', { okButton: iigT('iig_close'), allowVerticalScrolling: true });
+    await showIigPopup(popup);
+
+    function makeEditor(kind) {
+        const root = document.createElement('div');
+        root.className = 'iig-packs-controls';
+        const key = kind === 'negative' ? 'novelNegativeId' : 'novelStyle';
+        const label = field ? 'novelAppearance' : kind === 'negative' ? 'novelNegative' : 'novelStyleText';
+        root.innerHTML = `<div class="iig-entry-toolbar"><input type="search" class="text_pole" placeholder="${t('novelSearch')}" aria-label="${t('novelSearch')}"><div class="iig-entry-actions"></div></div>
+            <div class="iig-entry-grid"></div><p class="iig-packs-intro" role="status"></p>
+            <div class="iig-novel-fields iig-novel-editor" hidden><label>${t('novelName')}<input class="text_pole" maxlength="80"></label>
+            <label>${t(label)}<textarea class="text_pole" rows="5" maxlength="2000"></textarea></label><div class="iig-entry-actions"></div></div>`;
+        const toolbar = root.querySelector('.iig-entry-toolbar'), editor = root.querySelector('.iig-novel-editor');
+        const buttons = {};
+        for (const [action, icon] of [['novelNew','fa-plus'], ['novelEdit','fa-pen'], ['novelDelete','fa-trash-can'], ['novelApply','fa-check'], ['novelSave','fa-floppy-disk'], ['novelCancel','fa-xmark']]) {
+            const button = packIconButton(action === 'novelDelete' ? 'iig-packs-delete' : '', icon, iigT('iig_ui_' + action), { labelHidden: true });
+            button.dataset.action = action;
+            buttons[action] = button;
+            (['novelSave','novelCancel'].includes(action) ? editor : toolbar).lastElementChild.append(button);
+        }
+        const search = toolbar.querySelector('input'), grid = root.querySelector('.iig-entry-grid'), status = root.querySelector('[role="status"]');
+        const name = editor.querySelector('input'), text = editor.querySelector('textarea');
+        let id = field ? '' : s[key], editing = null;
+        const selected = () => s.novelLibrary.find(e => e.kind === kind && e.id === id);
+        function selection() {
+            const active = !field && id && id === s[key];
+            for (const card of grid.children) card.setAttribute('aria-pressed', String(card.dataset.id === id));
+            for (const k of ['novelEdit','novelDelete','novelApply']) buttons[k].disabled = !selected();
+            const apply = buttons.novelApply;
+            apply.title = iigT('iig_ui_' + (active ? 'novelDeactivate' : 'novelApply'));
+            apply.setAttribute('aria-label', apply.title);
+            apply.firstElementChild.className = 'fa-solid ' + (active ? 'fa-toggle-on' : 'fa-check');
+        }
+        function render() {
+            const query = search.value.trim().toLocaleLowerCase(), cards = document.createDocumentFragment();
+            const entries = s.novelLibrary.filter(e => e.kind === kind && e.name.toLocaleLowerCase().includes(query));
+            if (!entries.some(e => e.id === id)) id = '';
+            for (const item of entries) {
+                const card = packNode('button', 'iig-entry-card');
+                card.type = 'button'; card.dataset.id = item.id;
+                card.append(packNode('strong','',item.name), packNode('span','iig-entry-preview',item.text));
+                if (!field && item.id === s[key]) card.append(packNode('small','iig-entry-active',iigT('iig_ui_novelActive')));
+                cards.append(card);
+            }
+            grid.replaceChildren(cards);
+            status.textContent = entries.length ? '' : iigT('iig_ui_' + (query ? 'novelNoMatch' : 'novelEmpty'));
+            buttons.novelNew.disabled = s.novelLibrary.length >= 128;
+            selection();
+        }
+        function edit(open, entry) {
+            editing = entry;
+            editor.hidden = !open; toolbar.hidden = grid.hidden = status.hidden = open;
+            if (!open) { render(); search.focus(); return; }
+            name.value = entry?.name || ''; text.value = entry?.text ?? field?.value ?? '';
+            validate(); name.focus();
+        }
+        const validate = () => { buttons.novelSave.disabled = !(name.value.trim() && text.value.trim()); };
+        search.oninput = render; name.oninput = text.oninput = validate;
+        root.onclick = e => {
+            const target = e.target.closest('button');
+            if (target?.dataset.id) { id = target.dataset.id; selection(); return; }
+            const action = target?.dataset.action;
+            if (!action || s.apiType !== 'novelai') return;
+            const entry = selected();
+            if (action === 'novelNew' || action === 'novelEdit') { edit(true, action === 'novelEdit' ? entry : null); return; }
+            if (action === 'novelCancel') { edit(false); return; }
+            if (action === 'novelApply' && entry) {
+                if (field && isRefScopeStateCurrent(scope)) {
+                    slotName.value = entry.name;
+                    slotName.dispatchEvent(new Event('input'));
+                    field.value = entry.text;
+                    field.dispatchEvent(new Event('input'));
+                }
+                else if (!field) { s[key] = s[key] === id ? '' : id; saveSettings(); render(); return; }
+                popup.complete(ctx.POPUP_RESULT.AFFIRMATIVE); return;
+            }
+            if (action === 'novelSave' && name.value.trim() && text.value.trim()) {
+                const item = editing || { kind, id: Array.from(crypto.getRandomValues(new Uint32Array(3))).join('-') };
+                if (!editing && s.novelLibrary.length >= 128) return;
+                Object.assign(item, {name: name.value.trim(), text: text.value.trim()});
+                if (!editing) s.novelLibrary.push(item);
+                id = item.id; search.value = ''; edit(false);
+            } else if (action === 'novelDelete' && entry) {
+                s.novelLibrary.splice(s.novelLibrary.indexOf(entry), 1);
+                if (!field && s[key] === entry.id) s[key] = '';
+                id = ''; render(); search.focus();
+            } else return;
+            saveSettings();
+        };
+        render();
+        return root;
+    }
+}
+
 function bindRefSlotEvents() {
     const allSlots = document.querySelectorAll('.iig-ref-slot');
 
@@ -11283,6 +11565,20 @@ function bindRefSlotEvents() {
         const npcIndex = parseInt(slot.dataset.npcIndex, 10);
 
         const nameInput = slot.querySelector('.iig-ref-name');
+        const tools = document.createElement('div');
+        tools.className = 'iig-novel-slot-tools iig-novel-fields';
+        tools.innerHTML = `<textarea class="text_pole iig-novel-description" rows="3" maxlength="2000" aria-label="${sanitizeForHtml(iigT('iig_ui_novelAppearance'))}" placeholder="${sanitizeForHtml(iigT('iig_ui_novelAppearance'))}"></textarea><button type="button" class="menu_button iig-novel-pill"><i class="fa-solid fa-book-open" aria-hidden="true"></i><span>${sanitizeForHtml(iigT('iig_ui_novelLibrary'))}</span></button>`;
+        slot.append(tools);
+        const field = tools.querySelector('textarea');
+        const refFor = container => refType === 'npc' ? container.npcReferences[npcIndex] : container[`${refType}Ref`];
+        field.value = refFor(getActiveRefs())?.novelDescription || '';
+        bindIig(field, 'input', () => {
+            if (getSettings().apiType !== 'novelai') return;
+            const handle = getActiveRefScope({ forWrite: true });
+            refFor(handle.container).novelDescription = field.value;
+            saveActiveRefs(handle);
+        });
+        bindIig(tools.querySelector('button'), 'click', () => openNovelLibrary(field, nameInput));
         let nameEditScope = null;
         bindIig(nameInput, 'input', (e) => {
             const current = getActiveRefScope().container;
@@ -11307,6 +11603,7 @@ function bindRefSlotEvents() {
         // Failures are silent (log-only); the old file keeps working.
         let _renameInProgress = false;
         bindIig(nameInput, 'blur', async () => {
+            if (getSettings().apiType === 'novelai') { nameEditScope = null; return; }
             if (_renameInProgress || _refFolderClearInProgress) return;
             const scopeHandle = nameEditScope;
             nameEditScope = null;
@@ -11498,18 +11795,59 @@ function runSlashCommand(text) {
 function bindSettingsEvents() {
     const settings = getSettings();
     bindIig(document.querySelector('.iig-settings'), 'keydown', preserveNativeButtonActivation);
+    const recorder = document.getElementById('iig_library_shortcut');
+    const clearShortcut = document.getElementById('iig_library_shortcut_clear');
+    let recording = false;
+    const showChord = () => {
+        recorder.lastElementChild.textContent = recording ? iigT('iig_ui_shortcutPress') : settings.novelLibraryShortcut || iigT('iig_ui_shortcutRecord');
+        recorder.setAttribute('aria-pressed', String(recording));
+        clearShortcut.disabled = !settings.novelLibraryShortcut;
+    };
+    showChord();
+    bindIig(recorder, 'click', () => { recording = !recording; recorder.focus(); showChord(); });
+    bindIig(recorder, 'blur', () => { recording = false; showChord(); });
+    bindIig(recorder, 'keydown', event => {
+        if (!recording || event.key === 'Tab') return;
+        event.preventDefault(); event.stopPropagation();
+        if (event.key === 'Escape') { recording = false; showChord(); return; }
+        const chord = libraryShortcutChord(event);
+        if (chord) { settings.novelLibraryShortcut = chord; recording = false; saveSettings(); showChord(); }
+    });
+    bindIig(clearShortcut, 'click', () => { settings.novelLibraryShortcut = ''; saveSettings(); showChord(); recorder.focus(); });
 
     const updateVisibility = () => {
         const apiType = settings.apiType;
         const isNaistera = apiType === 'naistera';
         const isGemini = apiType === 'gemini';
         const isOpenAI = apiType === 'openai';
+        const direct = apiType === 'novelai';
+        const byId = id => document.getElementById(id);
+        byId('iig_novel_config').classList.toggle('iig-hidden', !direct);
+        byId('iig_library_shortcut_row').classList.toggle('iig-hidden', !direct);
+        for (const id of ['iig_endpoint_row', 'iig_api_key_row']) byId(id).classList.toggle('iig-hidden', direct);
+        byId('iig_path_override')?.closest('details')?.classList.toggle('iig-hidden', direct);
+        const refs = byId('iig_refs_section');
+        refs.classList.toggle('iig-text-refs', direct);
+        const title = refs.querySelector('summary h4 span');
+        title.dataset.i18n = direct ? 'iig_ui_novelPeople' : 'iig_ui_characterReferences';
+        title.textContent = iigT(title.dataset.i18n);
+        if (direct) {
+            byId('iig_novel_token').value = settings.novelToken;
+            byId('iig_novel_endpoint').value = settings.novelEndpoint || defaultSettings.novelEndpoint;
+            byId('iig_novel_model').value = directNovelModel(settings.novelModel);
+            byId('iig_novel_medium_hint').classList.toggle('iig-hidden', settings.novelModel !== NOVEL_MEDIUM);
+            byId('iig_novel_ratio').value = effectiveNovelRatio(settings);
+            byId('iig_novel_rotate_ratio').checked = settings.novelRotateRatio;
+            byId('iig_novel_protect').checked = settings.novelOpusOnly !== false;
+            byId('iig_novel_resolution').value = novelResolution(settings);
+            byId('iig_novel_resolution').disabled = settings.novelOpusOnly !== false;
+        }
 
         document.getElementById('iig_naistera_hint')?.classList.toggle('iig-hidden', !isNaistera);
 
         // Model row hidden for Naistera — it uses its own dropdown below.
-        document.getElementById('iig_model_row')?.classList.toggle('iig-hidden', isNaistera);
-        document.getElementById('iig_test_connection')?.classList.toggle('iig-hidden', !isNaistera);
+        document.getElementById('iig_model_row')?.classList.toggle('iig-hidden', isNaistera || direct);
+        document.getElementById('iig_test_connection')?.classList.toggle('iig-hidden', !isNaistera && !direct);
 
         const novelAiModel = isOpenAI && isRoutMyNovelAiModel(settings.model);
         document.getElementById('iig_size_row')?.classList.toggle('iig-hidden', !isOpenAI || novelAiModel);
@@ -11541,7 +11879,8 @@ function bindSettingsEvents() {
 
         const infoEl = document.getElementById('iig_api_type_info');
         if (infoEl) {
-            const hintKey = { openai: 'iig_ui_apiOpenaiHint', gemini: 'iig_ui_apiGeminiHint', naistera: 'iig_ui_apiNaisteraHint' }[apiType];
+            infoEl.closest('details').classList.toggle('iig-hidden', direct || isGemini);
+            const hintKey = { openai: 'iig_ui_apiOpenaiHint', naistera: 'iig_ui_apiNaisteraHint' }[apiType];
             infoEl.dataset.i18n = hintKey || '';
             infoEl.textContent = hintKey ? iigT(hintKey) : '';
         }
@@ -11785,12 +12124,41 @@ function bindSettingsEvents() {
         saveSettings();
     });
     
+    bindIig(document.getElementById('iig_novel_token'), 'input', e => { settings.novelToken = e.target.value.trim(); saveSettings(); });
+    bindIig(document.getElementById('iig_novel_endpoint'), 'change', e => {
+        settings.novelEndpoint = e.target.value.trim() || defaultSettings.novelEndpoint;
+        e.target.value = settings.novelEndpoint;
+        saveSettings();
+    });
+    bindIig(document.getElementById('iig_novel_model'), 'change', e => { settings.novelModel = directNovelModel(e.target.value); saveSettings(); updateVisibility(); });
+    bindIig(document.getElementById('iig_novel_ratio'), 'change', e => {
+        novelRatioRevision++;
+        if (settings.novelRotateRatio) novelRatioIndex = novelRatios.indexOf(e.target.value);
+        else { settings.novelRatio = e.target.value; saveSettings(); }
+    });
+    bindIig(document.getElementById('iig_novel_rotate_ratio'), 'change', e => {
+        settings.novelRotateRatio = e.target.checked;
+        novelRatioRevision++;
+        novelRatioIndex = 0;
+        document.getElementById('iig_novel_ratio').value = effectiveNovelRatio(settings);
+        saveSettings();
+    });
+    bindIig(document.getElementById('iig_novel_resolution'), 'change', e => {
+        settings.novelResolution = settings.novelOpusOnly === false && e.target.value === 'large' ? 'large' : 'normal';
+        saveSettings();
+    });
+    bindIig(document.getElementById('iig_novel_protect'), 'change', e => {
+        settings.novelOpusOnly = e.target.checked;
+        settings.novelResolution = 'normal';
+        saveSettings(); updateVisibility();
+    });
+    bindIig(document.getElementById('iig_novel_styles'), 'click', () => openNovelLibrary());
     bindIig(document.getElementById('iig_api_type'), 'change', (e) => {
         const nextApiType = e.target.value;
         const endpointInput = document.getElementById('iig_endpoint');
 
         // Auto-swap endpoint when switching to Naistera from an incompatible URL.
-        if (shouldReplaceEndpointForApiType(nextApiType, settings.endpoint)) {
+        if (nextApiType !== 'novelai' && shouldReplaceEndpointForApiType(nextApiType, settings.endpoint)) {
             settings.endpoint = normalizeConfiguredEndpoint(nextApiType, '');
             if (endpointInput) endpointInput.value = settings.endpoint;
         } else if (nextApiType === 'naistera') {
@@ -11799,6 +12167,7 @@ function bindSettingsEvents() {
         }
 
         settings.apiType = nextApiType;
+        renderRefSlots();
         invalidateImageModelCatalog();
         clearProviderQuirks('apiType changed');
         saveSettings();
@@ -11936,6 +12305,7 @@ function bindSettingsEvents() {
     });
 
     bindIig(document.getElementById('iig_refs_save_pack'), 'click', saveActiveRefsAsPack);
+    bindIig(document.getElementById('iig_refs_current_names'), 'click', fillCurrentRefNames);
 
     bindIig(document.getElementById('iig_refs_reset_scope'), 'click', () => {
         const scope = normalizeRefScope(settings.refScope);
@@ -12021,6 +12391,7 @@ function bindSettingsEvents() {
         if (sendRefs) sendRefs.checked = settings.naisteraSendRefs !== false;
         const gSendRefs = document.getElementById('iig_gemini_send_refs');
         if (gSendRefs) gSendRefs.checked = settings.geminiSendRefs !== false;
+        renderRefSlots();
         updateVisibility();
         toastr.success(sanitizeForHtml(iigT('iig_ui_presetLoaded', { name: preset.name })), sanitizeForHtml(iigT('iig_ui_notificationTitle')), { timeOut: 2500, escapeHtml: false });
     });
@@ -12180,7 +12551,7 @@ function bindSettingsEvents() {
     bindIig(document.getElementById('iig_test_connection'), 'click', async (e) => {
         const btn = e.currentTarget;
         const s = getSettings();
-        if (s.apiType !== 'naistera' || btn.classList.contains('testing')) return;
+        if (!['naistera','novelai'].includes(s.apiType) || btn.classList.contains('testing')) return;
         btn.classList.add('testing');
         const icon = btn.querySelector('i');
         const origClass = icon.className;
@@ -12188,6 +12559,11 @@ function bindSettingsEvents() {
 
         try {
             let flashSuccess = true;
+            if (s.apiType === 'novelai') {
+                if (!s.novelToken) throw new Error(iigT('iig_ui_setApiKeyFirst'));
+                await novelRequest(getEffectiveEndpoint(s), 'user/subscription', s.novelToken);
+                toastr.success(iigT('iig_ui_generationEndpointReached')); return;
+            }
             iigLog('INFO', `Test connection: apiType=${s.apiType}, endpoint=${s.endpoint}, apiKey=${s.apiKey ? 'set' : 'empty'}`);
 
             if (!s.apiKey) throw iigError('Set API key first', 'iig_ui_setApiKeyFirst');
@@ -12448,6 +12824,14 @@ function cleanupIig() {
         trackIigTask(migrateBase64Refs()).catch(e => iigLog('ERROR', `migrateBase64Refs crashed: ${e.message}`));
 
         registerIigLocale();
+        listenIig(document, 'keydown', event => {
+            const chord = libraryShortcutChord(event);
+            if (!chord || event.defaultPrevented || event.target.closest?.('#iig_library_shortcut_row') || (event.target.id !== 'send_textarea' && event.target.closest?.('input,textarea,select,[contenteditable="true"]'))) return;
+            const settings = getSettings();
+            if (!settings.enabled || settings.apiType !== 'novelai' || settings.novelLibraryShortcut !== chord || document.querySelector('dialog[open]')) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+            return openNovelLibrary();
+        }, true);
         listenIig(document, 'click', _closeModelPickersOnDocumentClick);
         createSettingsUI();
         addButtonsToExistingMessages();
