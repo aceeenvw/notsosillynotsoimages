@@ -7559,7 +7559,6 @@ async function openLightbox(imgElement, opener = document.activeElement) {
     content.className = 'iig-lightbox-content';
     content.innerHTML = `
         <div class="iig-lb-stage"><img class="iig-lightbox-img" draggable="false" alt="${sanitizeForHtml(iigT('iig_fullSizePreview'))}"></div>
-        <div class="iig-lightbox-caption"></div>
         <div class="iig-lightbox-actions">
             ${[['zoomOut', 'minus', 0.8], ['fitImage', 'down-left-and-up-right-to-center', 0], ['zoomIn', 'plus', 1.25]].map(([key, icon, factor]) => `<button type="button" class="iig-lightbox-action-btn" data-zoom="${factor}" title="${sanitizeForHtml(iigT('iig_' + key))}" aria-label="${sanitizeForHtml(iigT('iig_' + key))}"><i class="fa-solid fa-${icon}" aria-hidden="true"></i></button>`).join('')}
             <button type="button" class="iig-lightbox-action-btn iig-lb-download" title="${sanitizeForHtml(iigT('iig_download'))}" aria-label="${sanitizeForHtml(iigT('iig_downloadImage'))}">${SVG_ICON_DOWNLOAD}</button>
@@ -7567,7 +7566,6 @@ async function openLightbox(imgElement, opener = document.activeElement) {
             <button type="button" class="iig-lightbox-action-btn iig-lightbox-close" autofocus title="${sanitizeForHtml(iigT('iig_close'))}" aria-label="${sanitizeForHtml(iigT('iig_closeViewer'))}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
         </div>`;
     content.querySelector('.iig-lightbox-img').src = safeSrc;
-    content.querySelector('.iig-lightbox-caption').textContent = imgElement.alt || '';
     const popup = new ctx.Popup(content, ctx.POPUP_TYPE.TEXT, '', {
         large: true, okButton: false, cancelButton: false, animation: 'none',
     });
@@ -8400,6 +8398,8 @@ function renderRefSlots() {
     const setThumb = (slot, ref) => {
         const description = slot?.querySelector('.iig-novel-description');
         if (description) description.value = ref?.novelDescription || '';
+        const clear = slot?.querySelector('.iig-clear-description');
+        if (clear) clear.disabled = !(ref?.name || ref?.novelDescription);
         if (getSettings().apiType === 'novelai') return;
         clearPackedRefSlotAppearance(slot);
         const thumb = slot?.querySelector('.iig-ref-thumb');
@@ -8479,6 +8479,9 @@ const IIG_UI_I18N = {
         referenceHint: 'Names support comma-separated aliases. Photo limits depend on the provider.',
         novelActiveStyle: 'Active style', novelToken: 'NovelAI token',
         novelStyleText: 'Style', novelNegative: 'Negative prompt', novelNegativeOff: 'No active negative', novelPromptLibrary: 'Prompt Library',
+        novelAdd: 'Add', novelAdded: 'Added',
+        novelFavourite: 'Favourite',
+        descriptionSearch: 'Search by name or note',
         novelSearch: 'Search by name', novelEdit: 'Edit entry', novelEmpty: 'No entries yet', novelNoMatch: 'No matching entries', novelDeactivate: 'Deactivate', novelActive: 'Active', novelCancel: 'Cancel',
         novelMediumHint: 'Medium uses a fixed negative prompt. Your library selection stays saved.', novelUsageBlocked: 'V5 Opus allowance is empty or could not be verified. No image requested.',
         novelRatio: 'Aspect ratio',
@@ -8486,7 +8489,7 @@ const IIG_UI_I18N = {
         novelResolution: 'Resolution', novelNormal: 'Normal', novelLarge: 'Large (uses Anlas)',
         novelRotateRatio: 'Rotate aspect ratio',
         novelProtect: 'Require free Opus eligibility', novelPeople: 'Character Descriptions', novelAppearance: 'Appearance',
-        novelLibrary: 'Description library', novelStyles: 'Style library', novelNew: 'New entry', novelApply: 'Use entry', novelSave: 'Save entry', novelDelete: 'Delete entry', novelName: 'Entry name', novelText: 'Text', novelOff: 'No active style',
+        novelLibrary: 'Description library', novelStyles: 'Style library', novelNew: 'New entry', novelApply: 'Use entry', novelSave: 'Save entry', novelDelete: 'Delete entry', novelName: 'Entry name', novelNote: 'Note', novelText: 'Text', novelOff: 'No active style', novelClearSlot: 'Clear slot',
         novelBusy: 'A NovelAI image is already generating. Try again when it finishes.', novelBlocked: 'Free Opus eligibility could not be verified. No image requested.', novelNoImage: 'NovelAI returned no PNG image.',
         alwaysChar: 'Always send Char',
         alwaysUser: 'Always send User',
@@ -8666,6 +8669,9 @@ const IIG_UI_I18N = {
         referenceHint: 'Псевдонимы указываются через запятую. Лимит фото зависит от провайдера.',
         novelActiveStyle: 'Активный стиль', novelToken: 'Токен NovelAI',
         novelStyleText: 'Стиль', novelNegative: 'Негативный промпт', novelNegativeOff: 'Без негативного промпта', novelPromptLibrary: 'Библиотека промптов',
+        novelAdd: 'Добавить', novelAdded: 'Добавлено',
+        novelFavourite: 'Избранное',
+        descriptionSearch: 'Поиск по названию или заметке',
         novelSearch: 'Поиск по названию', novelEdit: 'Редактировать запись', novelEmpty: 'Пока нет записей', novelNoMatch: 'Ничего не найдено', novelDeactivate: 'Отключить', novelActive: 'Активно', novelCancel: 'Отмена',
         novelMediumHint: 'В режиме Medium негативный промпт фиксирован. Ваш выбор в библиотеке сохранён.', novelUsageBlocked: 'Лимит Opus для V5 исчерпан или не подтверждён. Запрос изображения не отправлен.',
         novelRatio: 'Соотношение сторон',
@@ -8673,7 +8679,7 @@ const IIG_UI_I18N = {
         novelResolution: 'Разрешение', novelNormal: 'Обычное', novelLarge: 'Большое (расходует Anlas)',
         novelRotateRatio: 'Чередовать соотношения сторон',
         novelProtect: 'Только бесплатные генерации Opus', novelPeople: 'Описания персонажей', novelAppearance: 'Внешность',
-        novelLibrary: 'Библиотека описаний', novelStyles: 'Библиотека стилей', novelNew: 'Новая запись', novelApply: 'Применить', novelSave: 'Сохранить запись', novelDelete: 'Удалить запись', novelName: 'Название', novelText: 'Текст', novelOff: 'Без стиля',
+        novelLibrary: 'Библиотека описаний', novelStyles: 'Библиотека стилей', novelNew: 'Новая запись', novelApply: 'Применить', novelSave: 'Сохранить запись', novelDelete: 'Удалить запись', novelName: 'Название', novelNote: 'Заметка', novelText: 'Текст', novelOff: 'Без стиля', novelClearSlot: 'Очистить слот',
         novelBusy: 'Дождитесь завершения генерации NovelAI.', novelBlocked: 'Бесплатная генерация Opus не подтверждена. Запрос изображения не отправлен.', novelNoImage: 'NovelAI не вернул изображение PNG.',
         alwaysChar: 'Всегда отправлять персонажа',
         alwaysUser: 'Всегда отправлять пользователя',
@@ -11442,9 +11448,12 @@ function libraryShortcutChord(event) {
 
 async function openNovelLibrary(field = null, slotName = null) {
     if (document.querySelector('.iig-novel-library')) return;
-    const s = getSettings(), ctx = getContext(), scope = getActiveRefScope();
+    const s = getSettings(), ctx = getContext();
+    let scope = field && getActiveRefScope();
+    let addedTimer;
     const library = document.createElement('div');
     library.className = 'iig-packs-popup iig-novel-library iig-prompt-library';
+    if (field) library.classList.add('iig-description-library');
     const t = key => sanitizeForHtml(iigT('iig_ui_' + key));
     library.innerHTML = `<h3 class="iig-packs-heading"><i class="fa-solid fa-${field ? 'book-open' : 'palette'}" aria-hidden="true"></i> ${t(field ? 'novelLibrary' : 'novelPromptLibrary')}</h3><div class="iig-prompt-columns"></div>`;
     const pages = library.lastElementChild;
@@ -11463,49 +11472,94 @@ async function openNovelLibrary(field = null, slotName = null) {
             for (const button of switcher.children) button.setAttribute('aria-pressed', String(button === tab));
         };
     }
-    const popup = new ctx.Popup(library, ctx.POPUP_TYPE.TEXT, '', { okButton: iigT('iig_close'), allowVerticalScrolling: true });
-    await showIigPopup(popup);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'menu_button iig-library-close';
+    close.title = iigT('iig_close');
+    close.setAttribute('aria-label', close.title);
+    close.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+    library.querySelector('.iig-packs-heading').append(close);
+    const popup = new ctx.Popup(library, ctx.POPUP_TYPE.TEXT, '', { okButton: false, cancelButton: false, allowVerticalScrolling: true });
+    close.onclick = () => popup.complete(ctx.POPUP_RESULT.AFFIRMATIVE);
+    try { await showIigPopup(popup); }
+    finally { clearTimeout(addedTimer); }
 
     function makeEditor(kind) {
         const root = document.createElement('div');
         root.className = 'iig-packs-controls';
         const key = kind === 'negative' ? 'novelNegativeId' : 'novelStyle';
         const label = field ? 'novelAppearance' : kind === 'negative' ? 'novelNegative' : 'novelStyleText';
+        const kindIcon = field ? 'fa-user-pen' : kind === 'style' ? 'fa-palette' : 'fa-ban';
         root.innerHTML = `<div class="iig-entry-toolbar"><input type="search" class="text_pole" placeholder="${t('novelSearch')}" aria-label="${t('novelSearch')}"><div class="iig-entry-actions"></div></div>
             <div class="iig-entry-grid"></div><p class="iig-packs-intro" role="status"></p>
-            <div class="iig-novel-fields iig-novel-editor" hidden><label>${t('novelName')}<input class="text_pole" maxlength="80"></label>
-            <label>${t(label)}<textarea class="text_pole" rows="5" maxlength="2000"></textarea></label><div class="iig-entry-actions"></div></div>`;
-        const toolbar = root.querySelector('.iig-entry-toolbar'), editor = root.querySelector('.iig-novel-editor');
+            <div class="iig-novel-fields iig-novel-editor" hidden><div class="iig-novel-editor-head"><strong class="iig-novel-editor-title"></strong><span class="iig-novel-editor-badge"><i class="fa-solid ${kindIcon}" aria-hidden="true"></i><span>${t(label)}</span></span></div>
+            <label><span class="iig-novel-field-label">${t('novelName')}</span><input class="text_pole" maxlength="80"></label>${field ? `<label><span class="iig-novel-field-label">${t('novelNote')}</span><input class="text_pole iig-novel-note" maxlength="120"></label>` : ''}
+            <label><span class="iig-novel-field-label">${t(label)}</span><textarea class="text_pole" rows="1" maxlength="2000"></textarea></label><div class="iig-novel-editor-actions"></div></div>`;
+        const toolbar = root.querySelector('.iig-entry-toolbar'), editor = root.querySelector('.iig-novel-editor'), editorTitle = editor.querySelector('.iig-novel-editor-title');
         const buttons = {};
-        for (const [action, icon] of [['novelNew','fa-plus'], ['novelEdit','fa-pen'], ['novelDelete','fa-trash-can'], ['novelApply','fa-check'], ['novelSave','fa-floppy-disk'], ['novelCancel','fa-xmark']]) {
+        const actions = packNode('div', 'iig-entry-actions iig-card-actions');
+        if (field) {
+            const search = toolbar.querySelector('input');
+            search.placeholder = iigT('iig_ui_descriptionSearch');
+            search.setAttribute('aria-label', search.placeholder);
+            buttons.novelAdd = packIconButton('', 'fa-check', iigT('iig_ui_novelAdd'), { labelHidden: true });
+            buttons.novelAdd.dataset.action = 'novelAdd';
+            actions.append(buttons.novelAdd);
+        }
+        const favourite = packIconButton('', 'fa-star', iigT('iig_ui_novelFavourite'), { labelHidden: true });
+        favourite.dataset.action = 'novelFavourite';
+        actions.append(favourite);
+        for (const [action, icon] of [['novelEdit','fa-pen'], ['novelDelete','fa-trash-can']]) {
             const button = packIconButton(action === 'novelDelete' ? 'iig-packs-delete' : '', icon, iigT('iig_ui_' + action), { labelHidden: true });
             button.dataset.action = action;
+            actions.append(button);
+        }
+        for (const [action, icon] of [['novelNew','fa-plus'], ['novelCancel','fa-xmark'], ['novelSave','fa-check']]) {
+            const inEditor = action === 'novelSave' || action === 'novelCancel';
+            const button = packIconButton('', icon, iigT('iig_ui_' + action), { labelHidden: !inEditor });
+            button.dataset.action = action;
             buttons[action] = button;
-            (['novelSave','novelCancel'].includes(action) ? editor : toolbar).lastElementChild.append(button);
+            (inEditor ? editor : toolbar).lastElementChild.append(button);
         }
         const search = toolbar.querySelector('input'), grid = root.querySelector('.iig-entry-grid'), status = root.querySelector('[role="status"]');
-        const name = editor.querySelector('input'), text = editor.querySelector('textarea');
+        const name = editor.querySelector('input'), note = editor.querySelector('.iig-novel-note'), text = editor.querySelector('textarea');
         let id = field ? '' : s[key], editing = null;
         const selected = () => s.novelLibrary.find(e => e.kind === kind && e.id === id);
         function selection() {
-            const active = !field && id && id === s[key];
-            for (const card of grid.children) card.setAttribute('aria-pressed', String(card.dataset.id === id));
-            for (const k of ['novelEdit','novelDelete','novelApply']) buttons[k].disabled = !selected();
-            const apply = buttons.novelApply;
-            apply.title = iigT('iig_ui_' + (active ? 'novelDeactivate' : 'novelApply'));
-            apply.setAttribute('aria-label', apply.title);
-            apply.firstElementChild.className = 'fa-solid ' + (active ? 'fa-toggle-on' : 'fa-check');
+            actions.remove();
+            for (const card of grid.querySelectorAll('.iig-entry-card')) {
+                const chosen = card.dataset.id === (field ? id : s[key]);
+                card.setAttribute('aria-pressed', String(chosen));
+                if (chosen) {
+                    favourite.setAttribute('aria-pressed', String(card.classList.contains('iig-favourite')));
+                    card.after(actions);
+                }
+            }
         }
         function render() {
             const query = search.value.trim().toLocaleLowerCase(), cards = document.createDocumentFragment();
-            const entries = s.novelLibrary.filter(e => e.kind === kind && e.name.toLocaleLowerCase().includes(query));
+            const entries = s.novelLibrary.filter(e => e.kind === kind && `${e.name} ${e.note || ''}`.toLocaleLowerCase().includes(query));
+            entries.sort((a, b) => Number(b.favourite === true) - Number(a.favourite === true));
             if (!entries.some(e => e.id === id)) id = '';
             for (const item of entries) {
                 const card = packNode('button', 'iig-entry-card');
+                const tile = packNode('div', 'iig-entry-tile');
+                const header = packNode('div', 'iig-entry-header');
+                header.append(card);
+                tile.append(header);
                 card.type = 'button'; card.dataset.id = item.id;
-                card.append(packNode('strong','',item.name), packNode('span','iig-entry-preview',item.text));
-                if (!field && item.id === s[key]) card.append(packNode('small','iig-entry-active',iigT('iig_ui_novelActive')));
-                cards.append(card);
+                card.append(packNode('strong','',item.name));
+                if (item.favourite === true) {
+                    card.classList.add('iig-favourite');
+                    const star = packNode('i', 'fa-solid fa-star iig-favourite-mark');
+                    star.setAttribute('role', 'img');
+                    star.setAttribute('aria-label', iigT('iig_ui_novelFavourite'));
+                    card.firstElementChild.prepend(star);
+                }
+                if (field && item.note) tile.append(packNode('small', 'iig-entry-note', item.note));
+                tile.append(packNode('span','iig-entry-preview',item.text));
+                if (!field && item.id === s[key]) tile.append(packNode('small','iig-entry-active',iigT('iig_ui_novelActive')));
+                cards.append(tile);
             }
             grid.replaceChildren(cards);
             status.textContent = entries.length ? '' : iigT('iig_ui_' + (query ? 'novelNoMatch' : 'novelEmpty'));
@@ -11514,41 +11568,85 @@ async function openNovelLibrary(field = null, slotName = null) {
         }
         function edit(open, entry) {
             editing = entry;
+            library.classList.toggle('is-editing', open);
+            if (!field) switcher.hidden = open;
             editor.hidden = !open; toolbar.hidden = grid.hidden = status.hidden = open;
             if (!open) { render(); search.focus(); return; }
-            name.value = entry?.name || ''; text.value = entry?.text ?? field?.value ?? '';
+            editorTitle.textContent = iigT('iig_ui_' + (entry ? 'novelEdit' : 'novelNew'));
+            name.value = entry?.name || '';
+            if (note) note.value = entry?.note || '';
+            text.value = entry?.text ?? field?.value ?? '';
+            fitEntryText();
             validate(); name.focus();
         }
+        function fitEntryText() {
+            if (CSS.supports('field-sizing', 'content')) return;
+            text.style.height = 'auto';
+            const borders = text.offsetHeight - text.clientHeight;
+            text.style.height = `${text.scrollHeight + borders}px`;
+        }
         const validate = () => { buttons.novelSave.disabled = !(name.value.trim() && text.value.trim()); };
-        search.oninput = render; name.oninput = text.oninput = validate;
+        search.oninput = render; name.oninput = validate;
+        text.oninput = () => { fitEntryText(); validate(); };
         root.onclick = e => {
             const target = e.target.closest('button');
-            if (target?.dataset.id) { id = target.dataset.id; selection(); return; }
+            if (s.apiType !== 'novelai') return;
+            if (target?.dataset.id) {
+                id = target.dataset.id;
+                const entry = selected();
+                if (!entry) return;
+                if (field) {
+                    selection();
+                } else {
+                    s[key] = s[key] === id ? '' : id;
+                    saveSettings();
+                    render();
+                    Array.from(grid.querySelectorAll('.iig-entry-card')).find(card => card.dataset.id === id)?.focus();
+                }
+                return;
+            }
             const action = target?.dataset.action;
-            if (!action || s.apiType !== 'novelai') return;
-            const entry = selected();
+            if (!action) return;
+            const actionId = field ? id : s[key];
+            const entry = s.novelLibrary.find(item => item.kind === kind && item.id === actionId);
+            if (action === 'novelFavourite' && entry) {
+                entry.favourite = !entry.favourite;
+                saveSettings();
+                render();
+                favourite.focus();
+                return;
+            }
+            if (action === 'novelAdd' && field && entry) {
+                const card = grid.querySelector('[aria-pressed="true"]');
+                if (!card || !isRefScopeStateCurrent(scope)) return;
+                slotName.value = entry.name;
+                slotName.dispatchEvent(new Event('input'));
+                field.value = entry.text;
+                field.dispatchEvent(new Event('input'));
+                scope = getActiveRefScope();
+                clearTimeout(addedTimer);
+                grid.querySelector('.iig-entry-added')?.remove();
+                const added = packNode('small', 'iig-entry-added iig-entry-active');
+                added.setAttribute('role', 'status');
+                card.firstElementChild.append(added);
+                added.textContent = ' · ' + iigT('iig_ui_novelAdded');
+                addedTimer = setTimeout(() => added.remove(), 1500);
+                return;
+            }
             if (action === 'novelNew' || action === 'novelEdit') { edit(true, action === 'novelEdit' ? entry : null); return; }
             if (action === 'novelCancel') { edit(false); return; }
-            if (action === 'novelApply' && entry) {
-                if (field && isRefScopeStateCurrent(scope)) {
-                    slotName.value = entry.name;
-                    slotName.dispatchEvent(new Event('input'));
-                    field.value = entry.text;
-                    field.dispatchEvent(new Event('input'));
-                }
-                else if (!field) { s[key] = s[key] === id ? '' : id; saveSettings(); render(); return; }
-                popup.complete(ctx.POPUP_RESULT.AFFIRMATIVE); return;
-            }
             if (action === 'novelSave' && name.value.trim() && text.value.trim()) {
                 const item = editing || { kind, id: Array.from(crypto.getRandomValues(new Uint32Array(3))).join('-') };
                 if (!editing && s.novelLibrary.length >= 128) return;
                 Object.assign(item, {name: name.value.trim(), text: text.value.trim()});
+                if (note) item.note = note.value.trim();
                 if (!editing) s.novelLibrary.push(item);
                 id = item.id; search.value = ''; edit(false);
             } else if (action === 'novelDelete' && entry) {
                 s.novelLibrary.splice(s.novelLibrary.indexOf(entry), 1);
                 if (!field && s[key] === entry.id) s[key] = '';
-                id = ''; render(); search.focus();
+                if (id === entry.id) id = '';
+                render(); search.focus();
             } else return;
             saveSettings();
         };
@@ -11570,15 +11668,34 @@ function bindRefSlotEvents() {
         tools.innerHTML = `<textarea class="text_pole iig-novel-description" rows="3" maxlength="2000" aria-label="${sanitizeForHtml(iigT('iig_ui_novelAppearance'))}" placeholder="${sanitizeForHtml(iigT('iig_ui_novelAppearance'))}"></textarea><button type="button" class="menu_button iig-novel-pill"><i class="fa-solid fa-book-open" aria-hidden="true"></i><span>${sanitizeForHtml(iigT('iig_ui_novelLibrary'))}</span></button>`;
         slot.append(tools);
         const field = tools.querySelector('textarea');
+        const libraryButton = tools.querySelector('button');
+        const actions = packNode('div', 'iig-novel-slot-actions');
+        const clear = packIconButton('iig-novel-pill iig-clear-description', 'fa-eraser', iigT('iig_ui_novelClearSlot'));
+        actions.append(libraryButton, clear);
+        tools.append(actions);
         const refFor = container => refType === 'npc' ? container.npcReferences[npcIndex] : container[`${refType}Ref`];
         field.value = refFor(getActiveRefs())?.novelDescription || '';
+        const syncClear = () => { clear.disabled = !(field.value || nameInput.value); };
+        syncClear();
+        bindIig(nameInput, 'input', syncClear);
+        bindIig(clear, 'click', () => {
+            if (getSettings().apiType !== 'novelai') return;
+            const handle = getActiveRefScope({ forWrite: true });
+            const ref = refFor(handle.container);
+            if (!ref) return;
+            ref.name = nameInput.value = '';
+            ref.novelDescription = field.value = '';
+            saveActiveRefs(handle);
+            syncClear();
+        });
         bindIig(field, 'input', () => {
             if (getSettings().apiType !== 'novelai') return;
             const handle = getActiveRefScope({ forWrite: true });
             refFor(handle.container).novelDescription = field.value;
             saveActiveRefs(handle);
+            syncClear();
         });
-        bindIig(tools.querySelector('button'), 'click', () => openNovelLibrary(field, nameInput));
+        bindIig(libraryButton, 'click', () => openNovelLibrary(field, nameInput));
         let nameEditScope = null;
         bindIig(nameInput, 'input', (e) => {
             const current = getActiveRefScope().container;
