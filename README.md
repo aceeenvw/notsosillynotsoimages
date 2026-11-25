@@ -25,7 +25,7 @@ Select **NovelAI**, enter your persistent NovelAI API token, and choose **V5 Ful
 
 **Aspect ratio** sets the shape for direct NovelAI images, including regenerations. Choose square or a portrait/landscape pair ranging up to 9:21 and 21:9. Enable **Rotate aspect ratio** to advance through the picker after each successful image. Turning rotation off restores your fixed ratio. Both resolutions support rotation; Large rounds the 13:19 pair to the pixel grid.
 
-**Character Descriptions** uses the same names, aliases, and scopes as photo references. Give each person a short appearance description, or pick one from the **Description library**. Matched people are sent as separate text captions. Switching providers brings your reference photos back.
+**Character Descriptions** uses the same names, aliases, and scopes as photo references. In the **Description library**, write a description or use **Appearance tags** to draft one from a portrait, character card, user persona, or lorebook entry. Review the tags before saving. Matched characters are sent as separate text captions.
 
 In **Prompt Library**, save styles and negative prompts separately. Pick any combination, such as a watercolor style with a negative prompt that discourages lettering. Either selection can be turned off on its own.
 

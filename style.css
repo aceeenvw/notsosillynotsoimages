@@ -2778,6 +2778,31 @@ button.iig-regenerate-btn {
 .iig-novel-slot-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .iig-novel-slot-actions > .iig-novel-pill { flex: 1 1 auto; width: auto; }
 .iig-novel-editor { gap: 11px; padding: 2px 2px 0; }
+.iig-appearance-panel { display: grid; gap: 8px; min-width: 0; padding: 10px 12px; border: 1px solid var(--iig-packs-border); border-radius: 8px; background: var(--iig-packs-surface-soft); }
+.iig-portrait-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+.iig-portrait-name { overflow-wrap: anywhere; }
+.iig-portrait-name:empty { display: none; }
+.iig-source-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.iig-source-choices .menu_button[aria-pressed="true"] { background: color-mix(in srgb, var(--iig-packs-accent) 18%, var(--iig-packs-surface)); border-color: var(--iig-packs-accent); color: var(--iig-packs-accent); }
+.iig-source-choices [aria-pressed="false"] > .iig-source-check,
+.iig-source-choices [aria-pressed="true"] > i:not(.iig-source-check) { display: none; }
+.iig-lore-source { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.iig-appearance-panel label.iig-lore-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding-inline: 12px; border: 1px solid var(--iig-packs-border); border-radius: 999px; cursor: pointer; }
+.iig-lore-toggle:has(:checked) { background: var(--iig-packs-surface); color: var(--iig-packs-accent); }
+.iig-appearance-panel .iig-lore-toggle input { width: 1em; min-height: 0; padding: 0; accent-color: var(--iig-packs-accent); }
+.iig-lore-source > .iig-appearance-body { margin-top: 8px; }
+.iig-lore-preview { overflow-wrap: anywhere; }
+@media (pointer: coarse) { .iig-appearance-panel label.iig-lore-toggle { min-height: 44px; } }
+.iig-appearance-panel summary { cursor: pointer; padding-block: 8px; }
+.iig-appearance-body, .iig-appearance-body label { display: grid; gap: 6px; min-width: 0; }
+.iig-appearance-body :is(input, select, textarea) { box-sizing: border-box; width: 100%; min-width: 0; }
+.iig-appearance-body > .menu_button { justify-self: end; }
+.iig-appearance-body details .menu_button { margin-block-start: 6px; }
+.iig-appearance-panel > small:empty { display: none; }
+@media (pointer: coarse) {
+    .iig-appearance-panel :is(summary, button, select, input) { box-sizing: border-box; min-height: 44px; }
+    .iig-appearance-panel :is(input, select, textarea) { font-size: 16px; }
+}
 .iig-novel-editor-head {
     display: flex;
     flex-wrap: wrap;
@@ -2837,7 +2862,7 @@ button.iig-regenerate-btn {
     gap: 8px;
     padding-top: 2px;
 }
-.iig-novel-editor-actions .menu_button {
+.iig-novel-editor-actions .menu_button, .iig-appearance-panel .menu_button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -2849,11 +2874,27 @@ button.iig-regenerate-btn {
     border-radius: 999px;
     font-size: 0.86em;
 }
-.iig-novel-editor-actions [data-action="novelSave"]:enabled {
+.iig-appearance-panel .menu_button {
+    max-width: 100%;
+    border: 1px solid var(--iig-packs-border);
+    background: var(--iig-packs-surface);
+    color: inherit;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+.iig-appearance-panel .menu_button > i { color: var(--iig-packs-accent); }
+.iig-appearance-panel .menu_button:focus-visible { outline: 2px solid var(--iig-packs-accent); outline-offset: 2px; }
+@media (hover: hover) {
+    .iig-appearance-panel .menu_button:enabled:hover { border-color: var(--iig-packs-accent); }
+}
+@media (pointer: coarse) {
+    .iig-appearance-panel .menu_button { min-height: 44px; }
+}
+.iig-novel-editor-actions [data-action="novelSave"]:enabled, .iig-appearance-panel .iig-appearance-primary:enabled, .iig-portrait-head .menu_button:enabled {
     border-color: var(--iig-packs-accent);
     background: color-mix(in srgb, var(--iig-packs-accent) 16%, var(--iig-packs-surface));
 }
-.iig-novel-editor-actions [data-action="novelSave"]:disabled {
+.iig-novel-editor-actions [data-action="novelSave"]:disabled, .iig-appearance-panel .menu_button:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
