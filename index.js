@@ -3775,7 +3775,7 @@ async function rerollSelectedMessageImage(imgElement, resolvedSource = null) {
             aspectRatio: data.aspect_ratio || data.aspectRatio || null,
             imageSize: data.image_size || data.imageSize || null,
             quality: data.quality || null, preset: data.preset || null, signal: controller.signal,
-        });
+        }, { placeholder, batch: message, assertCurrent });
         assertCurrent();
         setStatus(iigT('iig_saving'));
         const imagePath = await saveImageToFile(dataUrl, controller.signal);
@@ -6296,8 +6296,55 @@ function maybeSuggestFix(error) {
     } catch (_) { /* swallow — hint is best-effort */ }
 }
 
-/** Validate settings before generation; throws with aggregated error list. */
-let novelBusy = false;
+const novelQueue = [];
+let novelRunning = false;
+
+async function runNovelJob(options, generate) {
+    const { signal, placeholder, batch } = options;
+    throwIfSignalAborted(signal);
+    if (novelRunning) {
+        if (novelQueue.length >= 32) throw new Error(iigT('iig_ui_novelQueueFull'));
+        placeholder.classList.add('iig-queued');
+        await new Promise((resolve, reject) => {
+            const status = placeholder.querySelector('.iig-status');
+            const job = { batch, finish(error) {
+                signal.removeEventListener('abort', abort);
+                if (error) reject(error); else resolve();
+            }, position(ahead) { status.textContent = iigT('iig_ui_novelQueued', { ahead }); } };
+            const abort = () => {
+                const i = novelQueue.indexOf(job);
+                if (i < 0) return;
+                novelQueue.splice(i, 1);
+                for (let j = i; j < novelQueue.length; j++) novelQueue[j].position(j + 1);
+                job.finish(new DOMException('Request aborted', 'AbortError'));
+            };
+            job.position(novelQueue.push(job));
+            signal.addEventListener('abort', abort, { once: true });
+        });
+    }
+    novelRunning = true;
+    try {
+        throwIfSignalAborted(signal);
+        options.assertCurrent();
+        placeholder.classList.remove('iig-queued');
+        placeholder.querySelector('.iig-status').textContent = iigT('iig_generating');
+        startPlaceholderTimer(placeholder);
+        return await generate();
+    } catch (error) {
+        if (error?.novelAccountBlocked) {
+            for (let i = novelQueue.length - 1; i >= 0; i--) {
+                if (novelQueue[i].batch === batch) novelQueue.splice(i, 1)[0].finish(error);
+            }
+        }
+        throw error;
+    } finally {
+        const next = novelQueue.shift();
+        if (next) {
+            next.finish();
+            novelQueue.forEach((job, i) => job.position(i + 1));
+        } else novelRunning = false;
+    }
+}
 const NOVEL_MODELS = Object.freeze({
     'nai-diffusion-5-full': 'V5 Full', 'nai-diffusion-5-full-medium': 'V5 Full Medium',
     'nai-diffusion-5-curated': 'V5 Curated', 'nai-diffusion-4-5-full': 'V4.5 Full', 'nai-diffusion-4-5-curated': 'V4.5 Curated',
@@ -6344,44 +6391,54 @@ async function novelRequest(endpoint, path, token, signal, body) {
     }, body ? FETCH_TIMEOUT : 20000);
     if (!response.ok) {
         response.iigDiscard?.();
-        throw new Error(`NovelAI: HTTP ${response.status}`);
+        throw Object.assign(new Error(`NovelAI: HTTP ${response.status}`), { novelAccountBlocked: [401, 402, 403].includes(response.status) });
     }
     return response.json();
 }
 
 async function generateDirectNovel(prompt, style, options, settings) {
-    if (novelBusy) throw new Error(iigT('iig_ui_novelBusy'));
-    novelBusy = true;
-    try {
-        const token = settings.novelToken;
-        const endpoint = getEffectiveEndpoint(settings);
-        const refs = getActiveRefs();
-        const people = [refs.charRef, refs.userRef, ...refs.npcReferences.slice(0, 4)];
-        const descriptions = people.filter((ref, i) => ref?.novelDescription?.trim() && (
-            (i === 0 && settings.charRefAlways) || (i === 1 && settings.userRefAlways) ||
-            refMatchesPrompt(ref, prompt, i === 0 ? getStCharName() : i === 1 ? getStUserName() : '')
-        )).map(ref => ref.novelDescription.trim().slice(0, 2000));
-        const activeStyle = settings.novelLibrary?.find(item => item.kind === 'style' && item.id === settings.novelStyle);
-        const scene = [activeStyle?.text, style, prompt].filter(Boolean).join(', ');
-        const model = directNovelModel(settings.novelModel);
-        const medium = model === NOVEL_MEDIUM, v5 = model.startsWith('nai-diffusion-5-');
-        const negative = medium ? NOVEL_MEDIUM_UC : settings.novelLibrary?.find(item => item.kind === 'negative' && item.id === settings.novelNegativeId)?.text || '';
+    const token = settings.novelToken;
+    const endpoint = getEffectiveEndpoint(settings);
+    const refs = getActiveRefs();
+    const people = [refs.charRef, refs.userRef, ...refs.npcReferences.slice(0, 4)];
+    const descriptions = people.filter((ref, i) => ref?.novelDescription?.trim() && (
+        (i === 0 && settings.charRefAlways) || (i === 1 && settings.userRefAlways) ||
+        refMatchesPrompt(ref, prompt, i === 0 ? getStCharName() : i === 1 ? getStUserName() : '')
+    )).map(ref => ref.novelDescription.trim().slice(0, 2000));
+    const activeStyle = settings.novelLibrary?.find(item => item.kind === 'style' && item.id === settings.novelStyle);
+    const scene = [activeStyle?.text, style, prompt].filter(Boolean).join(', ');
+    const model = directNovelModel(settings.novelModel);
+    const medium = model === NOVEL_MEDIUM, v5 = model.startsWith('nai-diffusion-5-');
+    const negative = medium ? NOVEL_MEDIUM_UC : settings.novelLibrary?.find(item => item.kind === 'negative' && item.id === settings.novelNegativeId)?.text || '';
+    const checkSettings = () => {
+        const live = getSettings();
+        if (!live.enabled || live.apiType !== 'novelai' || live.novelToken !== token || getEffectiveEndpoint(live) !== endpoint || live.novelOpusOnly !== settings.novelOpusOnly) {
+            throw new DOMException('NovelAI settings changed', 'AbortError');
+        }
+    };
+    return runNovelJob(options, async () => {
+        checkSettings();
         const revision = novelRatioRevision;
         const sizes = novelResolution(settings) === 'large' ? NOVEL_LARGE_SIZES : NOVEL_SIZES;
         const [width,height] = sizes[effectiveNovelRatio(settings)];
         if (settings.novelOpusOnly !== false) {
-            const account = await novelRequest(endpoint, 'user/subscription', token, options.signal);
-            if (account?.active !== true || account.tier !== 3 || account.perks?.unlimitedImageGeneration === false) throw new Error(iigT('iig_ui_novelBlocked'));
+            const account = await novelRequest(endpoint, 'user/subscription', token, options.signal).catch(error => {
+                throwIfSignalAborted(options.signal);
+                throw Object.assign(error, { novelAccountBlocked: true });
+            });
+            if (account?.active !== true || account.tier !== 3 || account.perks?.unlimitedImageGeneration === false) throw Object.assign(new Error(iigT('iig_ui_novelBlocked')), { novelAccountBlocked: true });
             if (v5) {
                 const usage = account.usage;
                 const remaining = (n, cap) => Number.isFinite(n) && n > 0 && n <= cap;
                 if (!Number.isFinite(account.expiresAt) || account.expiresAt * 1000 <= Date.now() ||
                     !(usage?.isNegative === false && remaining(usage.percent, 100) || remaining(usage?.purchasedPercent, 400))) {
-                    throw new Error(iigT('iig_ui_novelUsageBlocked'));
+                    throw Object.assign(new Error(iigT('iig_ui_novelUsageBlocked')), { novelAccountBlocked: true });
                 }
             }
         }
         throwIfSignalAborted(options.signal);
+        options.assertCurrent();
+        checkSettings();
         const captions = texts => texts.map(char_caption => ({ char_caption, centers: [{ x: 0.5, y: 0.5 }] }));
         const data = await novelRequest(endpoint, 'ai/generate-image', token, options.signal, {
             action: 'generate', input: scene,
@@ -6403,7 +6460,7 @@ async function generateDirectNovel(prompt, style, options, settings) {
             if (picker) picker.value = novelRatios[novelRatioIndex];
         }
         return `data:image/png;base64,${image}`;
-    } finally { novelBusy = false; }
+    });
 }
 
 function validateSettings() {
@@ -7030,7 +7087,7 @@ function bindRetryInput(input, settings, field, normalize) {
  * Generate an image with exponential-backoff retry, dispatched by apiType.
  * Listed 5xx statuses get at least one retry; AbortError propagates.
  */
-async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {}) {
+async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {}, novelJob) {
     validateSettings();
 
     const settings = Object.freeze({ ...getSettings() });
@@ -7049,8 +7106,7 @@ async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {
     }
 
     if (settings.apiType === 'novelai') {
-        onStatusUpdate?.(iigT('iig_generating'));
-        return generateDirectNovel(prompt, style, options, settings);
+        return generateDirectNovel(prompt, style, { ...novelJob, signal: options.signal }, settings);
     }
 
     // Ref gating by apiType: naistera = model + toggle; gemini = toggle; openai = always.
@@ -7792,7 +7848,7 @@ async function regenerateSingleImage(imgElement, preparedSource = null) {
                 quality: data.quality || null,
                 preset: data.preset || null,
                 signal: controller.signal,
-            }
+            }, { placeholder: loadingPlaceholder, batch: message, assertCurrent }
         );
 
         setStatus(iigT('iig_saving'));
@@ -7887,7 +7943,7 @@ async function regenerateSingleImage(imgElement, preparedSource = null) {
 }
 
 /** Create a loading-placeholder element with spinner + elapsed timer. */
-function createLoadingPlaceholder(tagId, timeoutMs = FETCH_TIMEOUT) {
+function createLoadingPlaceholder(tagId) {
     const placeholder = document.createElement('div');
     placeholder.className = 'iig-loading-placeholder';
     placeholder.dataset.tagId = tagId;
@@ -7915,9 +7971,14 @@ function createLoadingPlaceholder(tagId, timeoutMs = FETCH_TIMEOUT) {
         });
     }
 
+    if (getSettings().apiType !== 'novelai') startPlaceholderTimer(placeholder);
+    return placeholder;
+}
+
+function startPlaceholderTimer(placeholder) {
     const timerEl = placeholder.querySelector('.iig-timer');
     const startTime = Date.now();
-    const tSec = timeoutMs / 1000;
+    const tSec = FETCH_TIMEOUT / 1000;
     // Detachment is handled by the shared ticker.
     registerPlaceholderTick(placeholder, () => {
         const el = Math.floor((Date.now() - startTime) / 1000);
@@ -7925,7 +7986,6 @@ function createLoadingPlaceholder(tagId, timeoutMs = FETCH_TIMEOUT) {
         const m = Math.floor(el/60), s = el%60;
         timerEl.textContent = `${m}:${String(s).padStart(2,"0")} / ${Math.floor(tSec/60)}:00${IS_IOS ? " (iOS)" : ""}`;
     }, 1000);
-    return placeholder;
 }
 
 /** Create an error placeholder <img> (error.svg + hover tooltip). */
@@ -8490,7 +8550,7 @@ const IIG_UI_I18N = {
         novelRotateRatio: 'Rotate aspect ratio',
         novelProtect: 'Require free Opus eligibility', novelPeople: 'Character Descriptions', novelAppearance: 'Appearance',
         novelLibrary: 'Description library', novelStyles: 'Style library', novelNew: 'New entry', novelApply: 'Use entry', novelSave: 'Save entry', novelDelete: 'Delete entry', novelName: 'Entry name', novelNote: 'Note', novelText: 'Text', novelOff: 'No active style', novelClearSlot: 'Clear slot',
-        novelBusy: 'A NovelAI image is already generating. Try again when it finishes.', novelBlocked: 'Free Opus eligibility could not be verified. No image requested.', novelNoImage: 'NovelAI returned no PNG image.',
+        novelQueued: 'Queued · {ahead} ahead', novelQueueFull: 'Image queue is full. Retry when a slot opens.', novelBlocked: 'Free Opus eligibility could not be verified. No image requested.', novelNoImage: 'NovelAI returned no PNG image.',
         alwaysChar: 'Always send Char',
         alwaysUser: 'Always send User',
         referenceSet: 'Reference set',
@@ -8680,7 +8740,7 @@ const IIG_UI_I18N = {
         novelRotateRatio: 'Чередовать соотношения сторон',
         novelProtect: 'Только бесплатные генерации Opus', novelPeople: 'Описания персонажей', novelAppearance: 'Внешность',
         novelLibrary: 'Библиотека описаний', novelStyles: 'Библиотека стилей', novelNew: 'Новая запись', novelApply: 'Применить', novelSave: 'Сохранить запись', novelDelete: 'Удалить запись', novelName: 'Название', novelNote: 'Заметка', novelText: 'Текст', novelOff: 'Без стиля', novelClearSlot: 'Очистить слот',
-        novelBusy: 'Дождитесь завершения генерации NovelAI.', novelBlocked: 'Бесплатная генерация Opus не подтверждена. Запрос изображения не отправлен.', novelNoImage: 'NovelAI не вернул изображение PNG.',
+        novelQueued: 'В очереди · впереди: {ahead}', novelQueueFull: 'Очередь изображений заполнена. Повторите, когда освободится место.', novelBlocked: 'Бесплатная генерация Opus не подтверждена. Запрос изображения не отправлен.', novelNoImage: 'NovelAI не вернул изображение PNG.',
         alwaysChar: 'Всегда отправлять персонажа',
         alwaysUser: 'Всегда отправлять пользователя',
         referenceSet: 'Набор референсов',

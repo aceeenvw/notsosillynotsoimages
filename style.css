@@ -1868,6 +1868,11 @@
 }
 
 /* Pulse ring around spinner */
+.iig-loading-placeholder.iig-queued :is(.iig-spinner-wrap, .iig-timer) { display: none; }
+@media (pointer: coarse) {
+    .iig-loading-placeholder button.iig-stop-btn { min-height: 44px; min-width: 44px; }
+}
+
 .iig-spinner-wrap {
     position: relative;
     width: 48px;

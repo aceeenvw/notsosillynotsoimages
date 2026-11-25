@@ -5,6 +5,7 @@ Generate illustrations inside SillyTavern replies. When a reply contains an imag
 ## Generating images
 
 - **Providers and presets:** Choose OpenAI-compatible, Gemini-compatible, Naistera, or direct NovelAI. Save your configuration as a preset to switch providers later.
+- **Multiple NovelAI scenes:** Give each image its own prompt. Direct NovelAI generates them one at a time in reply order. Tap **Stop** on a waiting image to skip just that scene.
 - **Prompt Model:** By default, your chat model writes the image instructions along with its reply. Turn on **Prompt Model** to let a separate text model read the finished reply and write the image instructions instead.
 - **Try a different illustration:** Use **Regenerate** to draw one image again with the same instructions. Use **Rewrite prompt + regenerate** to change the instructions too. Both leave the rest of the reply alone.
 
